@@ -76,6 +76,7 @@ function startRound(room) {
   room.currentTurnIndex = 0;
   setupCasinosForRound(room);
   
+  // 모든 플레이어의 주사위 상태를 8개로 완전히 리셋 (핵심 수정)
   room.players.forEach(p => {
     p.diceCount = 8;
     p.currentRoll = [];
