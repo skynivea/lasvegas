@@ -22,13 +22,13 @@
       background: #091a10; color: #fff; font-size: 16px; text-align: center;
     }
     
-    /* 색상 선택 */
     .color-picker { display: flex; justify-content: space-between; margin: 12px 0; gap: 8px; }
     .color-btn {
       flex: 1; padding: 10px; border-radius: 6px; border: 2px solid transparent; font-weight: bold;
-      cursor: pointer; font-size: 13px; text-align: center;
+      cursor: pointer; font-size: 13px; text-align: center; transition: 0.2s;
     }
     .color-btn.selected { border-color: #d4af37 !important; transform: scale(1.05); }
+    .color-btn.disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
 
     .btn {
       width: 100%; padding: 12px; margin-top: 10px; border-radius: 6px; border: none;
@@ -48,7 +48,6 @@
     }
     .room-tag { background: #d4af37; color: #000; padding: 4px 10px; border-radius: 20px; font-weight: bold; }
 
-    /* 플레이어 대시보드 */
     .players-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 25px; }
     .player-card {
       background: #0d2116; padding: 10px; border-radius: 8px; border-top: 4px solid #888;
@@ -56,7 +55,6 @@
     }
     .player-card.active { box-shadow: 0 0 12px #d4af37; border-color: #d4af37 !important; }
 
-    /* 6개 마름모 카지노 판 그리드 */
     .casinos-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; flex: 1; padding: 10px; }
     
     .casino-diamond-wrapper {
@@ -64,41 +62,44 @@
       justify-content: center; align-items: center;
     }
     .casino-diamond {
-      width: 85%; height: 85%; background: linear-gradient(135deg, #113624, #081d13);
+      width: 90%; height: 90%; background: linear-gradient(135deg, #113624, #081d13);
       border: 3px solid #d4af37; transform: rotate(45deg); border-radius: 12px;
       box-shadow: inset 0 0 15px rgba(0,0,0,0.6), 0 8px 20px rgba(0,0,0,0.5);
-      position: absolute; inset: 7.5%;
+      position: absolute; inset: 5%;
     }
     .casino-content {
       position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; padding: 15px;
+      align-items: center; justify-content: center; padding: 10px;
     }
-    .casino-num { font-size: 32px; font-weight: 900; color: #d4af37; text-shadow: 0 2px 4px #000; }
+    .casino-num { font-size: 28px; font-weight: 900; color: #d4af37; text-shadow: 0 2px 4px #000; }
 
-    /* 💵 진짜 지폐 카드 스타일 */
-    .bills-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 6px 0; }
+    /* 💵 겹침 지폐 디버깅 반영 */
+    .bills-container { display: flex; justify-content: center; margin: 4px 0; }
     .real-bill {
-      width: 65px; height: 34px; background: linear-gradient(135deg, #85bb65, #2e5618);
-      border: 2px solid #fff; border-radius: 4px; color: #fff; font-weight: bold;
-      font-size: 11px; display: flex; justify-content: center; align-items: center;
-      box-shadow: 0 3px 6px rgba(0,0,0,0.4); text-shadow: 0 1px 2px #000;
+      width: 58px; height: 30px; background: linear-gradient(135deg, #85bb65, #2e5618);
+      border: 1.5px solid #fff; border-radius: 4px; color: #fff; font-weight: bold;
+      font-size: 10px; display: flex; justify-content: center; align-items: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.4); text-shadow: 0 1px 2px #000;
+      margin-left: -15px;
+    }
+    .real-bill:first-child { margin-left: 0; }
+
+    /* 🎲 배치된 주사위 영억 디버깅 반영 (넘침 방지) */
+    .placed-dice-area {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: 3px;
+      max-width: 95%; max-height: 65px; overflow-y: auto; padding: 2px;
     }
 
-    /* 배치된 주사위 들 */
-    .placed-dice-area { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; max-width: 90%; }
-
-    /* 🎲 표준 주사위 눈금 UI */
     .dice-face {
-      width: 32px; height: 32px; border-radius: 6px; position: relative;
-      box-shadow: inset 0 0 5px rgba(0,0,0,0.3), 0 3px 6px rgba(0,0,0,0.4);
+      width: 26px; height: 26px; border-radius: 5px; position: relative;
+      box-shadow: inset 0 0 4px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.4);
       display: inline-block; cursor: pointer; transition: transform 0.2s;
     }
     .dice-face:hover { transform: scale(1.1); }
     .dice-dot {
-      position: absolute; width: 6px; height: 6px; border-radius: 50%;
+      position: absolute; width: 5px; height: 5px; border-radius: 50%;
       background-color: currentColor; transform: translate(-50%, -50%);
     }
-    /* 1~6 눈금 좌표 정의 */
     .dot-center { top: 50%; left: 50%; }
     .dot-tl { top: 25%; left: 25%; }
     .dot-tr { top: 25%; left: 75%; }
@@ -107,24 +108,19 @@
     .dot-ml { top: 50%; left: 25%; }
     .dot-mr { top: 50%; left: 75%; }
 
-    /* 주사위 굴림 흔들림 애니메이션 */
     @keyframes rollAnimation {
       0% { transform: rotate(0deg) scale(0.8); }
-      25% { transform: rotate(90deg) scale(1.1); }
-      50% { transform: rotate(180deg) scale(0.9); }
-      75% { transform: rotate(270deg) scale(1.1); }
+      50% { transform: rotate(180deg) scale(1.1); }
       100% { transform: rotate(360deg) scale(1); }
     }
-    .rolling { animation: rollAnimation 0.5s ease-out; }
+    .rolling { animation: rollAnimation 0.4s ease-out; }
 
-    /* 컨트롤 판 */
     .controls-panel {
       background: #0f2b1d; padding: 15px; border-radius: 10px; margin-top: 15px;
       display: flex; align-items: center; justify-content: space-between; border: 1px solid #2a5a44;
     }
     .dice-roll-area { display: flex; gap: 12px; align-items: center; min-height: 45px; }
 
-    /* 채팅 */
     .chat-header { padding: 12px; background: #0d2116; font-weight: bold; border-bottom: 1px solid #1a422f; color: #d4af37; }
     #chat-messages { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
     .chat-item { line-height: 1.4; word-break: break-all; }
@@ -146,7 +142,6 @@
 </head>
 <body>
 
-  <!-- 로비 모달 -->
   <div id="lobby-overlay">
     <div class="lobby-card">
       <h1>LAS VEGAS</h1>
@@ -154,10 +149,10 @@
       
       <div style="margin-top: 10px; font-size: 13px; color: #aaa;">주사위 색상 선택:</div>
       <div class="color-picker">
-        <div class="color-btn selected" style="background:#212529; color:#fff;" onclick="selectColor('black', this)">검정</div>
-        <div class="color-btn" style="background:#F8F9FA; color:#212529;" onclick="selectColor('white', this)">하양</div>
-        <div class="color-btn" style="background:#E63946; color:#fff;" onclick="selectColor('red', this)">빨강</div>
-        <div class="color-btn" style="background:#1D3557; color:#fff;" onclick="selectColor('blue', this)">파랑</div>
+        <div class="color-btn selected" data-color="black" style="background:#212529; color:#fff;" onclick="selectColor('black', this)">검정</div>
+        <div class="color-btn" data-color="white" style="background:#F8F9FA; color:#212529;" onclick="selectColor('white', this)">하양</div>
+        <div class="color-btn" data-color="red" style="background:#E63946; color:#fff;" onclick="selectColor('red', this)">빨강</div>
+        <div class="color-btn" data-color="blue" style="background:#1D3557; color:#fff;" onclick="selectColor('blue', this)">파랑</div>
       </div>
 
       <button class="btn" onclick="createRoom()">방 생성하기</button>
@@ -180,16 +175,12 @@
         </div>
       </div>
 
-      <!-- 플레이어 대시보드 (턴 순서대로 표시) -->
       <div class="players-bar" id="players-list"></div>
-
-      <!-- 마름모 카지노 6개 -->
       <div class="casinos-grid" id="casinos-container"></div>
 
-      <!-- 컨트롤러 -->
       <div class="controls-panel">
         <div>
-          <span style="font-size: 13px; color: #aaa;">내 굴린 주사위 (자동 오름차순 정렬):</span>
+          <span style="font-size: 13px; color: #aaa;">내 굴린 주사위 (자동 정렬):</span>
           <div class="dice-roll-area" id="rolled-dice-area" style="margin-top: 5px;"></div>
         </div>
         <button id="roll-btn" class="btn" style="width: auto; padding: 10px 25px;" onclick="rollDice()">주사위 굴리기</button>
@@ -206,7 +197,6 @@
     </div>
   </div>
 
-  <!-- 라운드 결과 모달 -->
   <div id="result-modal" class="modal hidden">
     <div class="modal-content">
       <h2 id="modal-title" style="color: #d4af37; margin-bottom: 15px;">라운드 결과</h2>
