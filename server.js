@@ -11,6 +11,10 @@ const io = new Server(server, {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // 지폐 카드 덱 생성 ($10k ~ $90k, 각 8장씩 총 72장)
 function createMoneyDeck() {
   const denominations = [10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000];
