@@ -1,41 +1,39 @@
-const socket = io({
-  transports: ['websocket', 'polling']
-});
+const socket = io({ transports: ['websocket', 'polling'] });
 
 let currentRoomCode = null;
 let myPlayerId = null;
 let gameState = null;
+let selectedColorKey = 'black';
 
-// 로비 이벤트
+function selectColor(colorKey, el) {
+  selectedColorKey = colorKey;
+  document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
 function createRoom() {
   const name = document.getElementById('player-name-input').value.trim();
-  if (!name) return alert('닉네임을 입력해 주세요.');
-  socket.emit('createRoom', { name });
+  if (!name) return alert('닉네임을 입력하세요.');
+  socket.emit('createRoom', { name, color: selectedColorKey });
 }
 
 function joinRoom() {
   const name = document.getElementById('player-name-input').value.trim();
   const roomCode = document.getElementById('room-code-input').value.trim();
-  if (!name || !roomCode) return alert('닉네임과 방 코드를 모두 입력해 주세요.');
-  socket.emit('joinRoom', { name, roomCode });
+  if (!name || !roomCode) return alert('닉네임과 방 코드를 입력하세요.');
+  socket.emit('joinRoom', { name, color: selectedColorKey, roomCode });
 }
 
 function startGame() {
-  if (currentRoomCode) {
-    socket.emit('startGame', { roomCode: currentRoomCode });
-  }
+  if (currentRoomCode) socket.emit('startGame', { roomCode: currentRoomCode });
 }
 
 function rollDice() {
-  if (currentRoomCode) {
-    socket.emit('rollDice', { roomCode: currentRoomCode });
-  }
+  if (currentRoomCode) socket.emit('rollDice', { roomCode: currentRoomCode });
 }
 
 function selectDiceToPlace(diceValue) {
-  if (currentRoomCode) {
-    socket.emit('placeDice', { roomCode: currentRoomCode, diceValue });
-  }
+  if (currentRoomCode) socket.emit('placeDice', { roomCode: currentRoomCode, diceValue });
 }
 
 function nextRound() {
@@ -54,7 +52,20 @@ function sendChat() {
   }
 }
 
-// 수신 소켓 이벤트 처리
+// 🎲 표준 주사위 눈금 렌더링 HTML 생성 함수
+function createDiceFaceHTML(val, colorHex, textColorHex, extraClass = '') {
+  let dots = '';
+  if (val === 1) dots = '<div class="dice-dot dot-center"></div>';
+  else if (val === 2) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-br"></div>';
+  else if (val === 3) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-center"></div><div class="dice-dot dot-br"></div>';
+  else if (val === 4) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-tr"></div><div class="dice-dot dot-bl"></div><div class="dice-dot dot-br"></div>';
+  else if (val === 5) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-tr"></div><div class="dice-dot dot-center"></div><div class="dice-dot dot-bl"></div><div class="dice-dot dot-br"></div>';
+  else if (val === 6) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-tr"></div><div class="dice-dot dot-ml"></div><div class="dice-dot dot-mr"></div><div class="dice-dot dot-bl"></div><div class="dice-dot dot-br"></div>';
+
+  return `<div class="dice-face ${extraClass}" style="background-color:${colorHex}; color:${textColorHex};">${dots}</div>`;
+}
+
+// 소켓 리스너
 socket.on('roomCreated', ({ roomCode, playerId }) => {
   currentRoomCode = roomCode;
   myPlayerId = playerId;
@@ -69,18 +80,16 @@ socket.on('roomJoined', ({ roomCode, playerId }) => {
   document.getElementById('display-room-code').innerText = roomCode;
 });
 
-socket.on('errorMsg', (msg) => {
-  alert(msg);
-});
+socket.on('errorMsg', msg => alert(msg));
 
 socket.on('chatMessage', (data) => {
   const chatContainer = document.getElementById('chat-messages');
   const div = document.createElement('div');
-  div.className = 'chat-item';
   if (data.system) {
     div.className = 'chat-item chat-sys';
-    div.innerText = `[시스템] ${data.text}`;
+    div.innerText = `[알림] ${data.text}`;
   } else {
+    div.className = 'chat-item';
     div.innerHTML = `<b style="color:${data.color}">${data.sender}:</b> ${data.text}`;
   }
   chatContainer.appendChild(div);
@@ -101,11 +110,8 @@ socket.on('roundResolved', (data) => {
   modal.classList.remove('hidden');
 
   if (data.isGameOver) {
-    modalTitle.innerText = "🏆 최종 게임 종료 🏆";
-    let bodyHTML = `<h3 style="text-align:center; color:#85bb65; margin-bottom:15px;">우승자: ${data.winner.name} ($${data.winner.totalMoney.toLocaleString()})</h3>`;
-    bodyHTML += `<hr style="border-color:#2a5a44; margin:10px 0;"><ol style="padding-left:20px;">`;
-    
-    // 순위 정렬
+    modalTitle.innerText = "🏆 최종 승리 🏆";
+    let bodyHTML = `<h3 style="text-align:center; color:#d4af37; margin-bottom:15px;">우승자: ${data.winner.name} ($${data.winner.totalMoney.toLocaleString()})</h3><ol style="padding-left:20px;">`;
     const sorted = [...data.players].sort((a,b) => b.totalMoney - a.totalMoney);
     sorted.forEach(p => {
       bodyHTML += `<li><b>${p.name}</b>: $${p.totalMoney.toLocaleString()} (${p.cardsWon}장)</li>`;
@@ -119,105 +125,91 @@ socket.on('roundResolved', (data) => {
     for (let c = 1; c <= 6; c++) {
       bodyHTML += `<div style="margin-bottom:8px;"><b>[카지노 ${c}]</b> `;
       if (data.results[c] && data.results[c].length > 0) {
-        const wins = data.results[c].map(w => `${w.playerName} ($${w.amount.toLocaleString()})`).join(', ');
-        bodyHTML += wins;
+        bodyHTML += data.results[c].map(w => `${w.playerName} ($${w.amount.toLocaleString()})`).join(', ');
       } else {
-        bodyHTML += `<span style="color:#aaa;">획득자 없음 (폭파 또는 돈 없음)</span>`;
+        bodyHTML += `<span style="color:#aaa;">획득자 없음 (폭파)</span>`;
       }
       bodyHTML += `</div>`;
     }
     modalBody.innerHTML = bodyHTML;
 
-    // 방장에게만 다음 라운드 버튼 노출
-    if (gameState && gameState.hostId === myPlayerId) {
-      nextBtn.classList.remove('hidden');
-    } else {
-      nextBtn.classList.add('hidden');
-    }
+    if (gameState && gameState.hostId === myPlayerId) nextBtn.classList.remove('hidden');
+    else nextBtn.classList.add('hidden');
   }
 });
 
-// 화면 UI 렌더링
 function renderUI() {
   if (!gameState) return;
 
   document.getElementById('round-num').innerText = gameState.round;
 
-  // 방장 시작 버튼 처리
   const startBtn = document.getElementById('start-btn');
-  if (gameState.state === 'WAITING' && gameState.hostId === myPlayerId) {
-    startBtn.classList.remove('hidden');
-  } else {
-    startBtn.classList.add('hidden');
-  }
+  if (gameState.state === 'WAITING' && gameState.hostId === myPlayerId) startBtn.classList.remove('hidden');
+  else startBtn.classList.add('hidden');
 
-  // 상태 텍스트
   const statusText = document.getElementById('status-text');
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId;
   if (gameState.state === 'WAITING') {
-    statusText.innerText = '인원을 기다리는 중입니다...';
+    statusText.innerText = '플레이어를 기다리는 중...';
   } else if (gameState.state === 'PLAYING') {
     const turnPlayer = gameState.players[gameState.currentTurnIndex];
-    statusText.innerText = isMyTurn ? '🔥 당신의 턴입니다!' : `${turnPlayer.name}님의 턴 진행 중...`;
+    statusText.innerText = isMyTurn ? '🔥 당신의 턴입니다!' : `${turnPlayer.name}님 턴 진행 중...`;
   }
 
-  // 1. 플레이어 목록 렌더링
+  // 1. 플레이어 턴 순서 표시 대시보드
   const playersContainer = document.getElementById('players-list');
   playersContainer.innerHTML = '';
   gameState.players.forEach((p, idx) => {
     const card = document.createElement('div');
     const isTurn = gameState.state === 'PLAYING' && idx === gameState.currentTurnIndex;
     card.className = `player-card ${isTurn ? 'active' : ''}`;
-    card.style.borderColor = p.color;
+    card.style.borderTopColor = p.color;
 
     card.innerHTML = `
-      <div class="player-name" style="color:${p.color}">
-        ${p.name} ${p.id === gameState.hostId ? '👑' : ''}
+      <div style="font-weight:bold; font-size:13px; color:${p.color}">
+        ${idx + 1}번 턴: ${p.name} ${p.id === gameState.hostId ? '👑' : ''}
       </div>
-      <div class="player-stats">남은 주사위: <b>${p.diceCount}개</b></div>
-      <div class="player-stats">획득 금액: <b>$${p.totalMoney.toLocaleString()}</b></div>
+      <div style="font-size:11px; color:#aaa; margin-top:3px;">주사위: <b>${p.diceCount}개</b></div>
+      <div style="font-size:11px; color:#aaa;">소지금: <b>$${p.totalMoney.toLocaleString()}</b></div>
     `;
     playersContainer.appendChild(card);
   });
 
-  // 2. 카지노 6개 렌더링
+  // 2. 마름모 카지노 6개 렌더링
   const casinosContainer = document.getElementById('casinos-container');
   casinosContainer.innerHTML = '';
 
   for (let c = 1; c <= 6; c++) {
     const casinoData = gameState.casinos[c] || { bills: [], dicePlaced: {} };
-    const card = document.createElement('div');
-    card.className = 'casino-card';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'casino-diamond-wrapper';
 
-    let billsHTML = casinoData.bills.map(b => `<span class="bill-tag">$${b/1000}k</span>`).join('');
-    
-    // 배치된 주사위 HTML
+    let billsHTML = casinoData.bills.map(b => `<div class="real-bill">$${b/1000}K</div>`).join('');
+
     let diceHTML = '';
     Object.keys(casinoData.dicePlaced).forEach(pId => {
       const count = casinoData.dicePlaced[pId];
       const player = gameState.players.find(p => p.id === pId);
       if (player && count > 0) {
         for (let i = 0; i < count; i++) {
-          diceHTML += `<div class="placed-dice" style="background:${player.color}">${c}</div>`;
+          diceHTML += createDiceFaceHTML(c, player.color, player.textColor);
         }
       }
     });
 
-    card.innerHTML = `
-      <div class="casino-header">
-        <span class="casino-num">${c}</span>
-        <div class="money-bills">${billsHTML}</div>
-      </div>
-      <div style="margin: 10px 0;">
-        <span style="font-size:11px; color:#aaa;">배치된 주사위:</span>
-        <div class="dice-slots" style="margin-top:4px;">${diceHTML}</div>
+    wrapper.innerHTML = `
+      <div class="casino-diamond"></div>
+      <div class="casino-content">
+        <div class="casino-num">${c}</div>
+        <div class="bills-container">${billsHTML}</div>
+        <div class="placed-dice-area">${diceHTML}</div>
       </div>
     `;
 
-    casinosContainer.appendChild(card);
+    casinosContainer.appendChild(wrapper);
   }
 
-  // 3. 하단 컨트롤러 렌더링 (내 턴일 때만 액션 활성화)
+  // 3. 하단 주사위 컨트롤 및 오름차순 자동 정렬
   const rollBtn = document.getElementById('roll-btn');
   const diceArea = document.getElementById('rolled-dice-area');
   diceArea.innerHTML = '';
@@ -232,16 +224,24 @@ function renderUI() {
       rollBtn.disabled = true;
       rollBtn.style.opacity = '0.4';
 
-      // 굴린 주사위 선택 버튼 생성
+      // 눈금별 그룹화 및 오름차순 배치
       const counts = {};
       myPlayer.currentRoll.forEach(v => counts[v] = (counts[v] || 0) + 1);
 
-      Object.keys(counts).forEach(val => {
-        const btn = document.createElement('div');
-        btn.className = 'die-btn';
-        btn.innerText = `${val} (${counts[val]}개)`;
-        btn.onclick = () => selectDiceToPlace(parseInt(val));
-        diceArea.appendChild(btn);
+      Object.keys(counts).forEach(valStr => {
+        const val = parseInt(valStr);
+        const group = document.createElement('div');
+        group.style.display = 'flex';
+        group.style.alignItems = 'center';
+        group.style.gap = '4px';
+        group.style.cursor = 'pointer';
+        group.onclick = () => selectDiceToPlace(val);
+
+        for (let i = 0; i < counts[val]; i++) {
+          group.innerHTML += createDiceFaceHTML(val, myPlayer.color, myPlayer.textColor, 'rolling');
+        }
+
+        diceArea.appendChild(group);
       });
     }
   } else {
