@@ -6,6 +6,7 @@ let gameState = null;
 let selectedColorKey = 'black';
 
 function selectColor(colorKey, el) {
+  if (el.classList.contains('disabled')) return;
   selectedColorKey = colorKey;
   document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
   el.classList.add('selected');
@@ -52,7 +53,6 @@ function sendChat() {
   }
 }
 
-// 🎲 표준 주사위 눈금 렌더링 HTML 생성 함수
 function createDiceFaceHTML(val, colorHex, textColorHex, extraClass = '') {
   let dots = '';
   if (val === 1) dots = '<div class="dice-dot dot-center"></div>';
@@ -65,7 +65,6 @@ function createDiceFaceHTML(val, colorHex, textColorHex, extraClass = '') {
   return `<div class="dice-face ${extraClass}" style="background-color:${colorHex}; color:${textColorHex};">${dots}</div>`;
 }
 
-// 소켓 리스너
 socket.on('roomCreated', ({ roomCode, playerId }) => {
   currentRoomCode = roomCode;
   myPlayerId = playerId;
@@ -143,6 +142,18 @@ function renderUI() {
 
   document.getElementById('round-num').innerText = gameState.round;
 
+  // 선점된 색상 비활성화 처리
+  if (gameState.takenColors) {
+    document.querySelectorAll('.color-btn').forEach(btn => {
+      const c = btn.getAttribute('data-color');
+      if (gameState.takenColors.includes(c)) {
+        btn.classList.add('disabled');
+      } else {
+        btn.classList.remove('disabled');
+      }
+    });
+  }
+
   const startBtn = document.getElementById('start-btn');
   if (gameState.state === 'WAITING' && gameState.hostId === myPlayerId) startBtn.classList.remove('hidden');
   else startBtn.classList.add('hidden');
@@ -156,7 +167,6 @@ function renderUI() {
     statusText.innerText = isMyTurn ? '🔥 당신의 턴입니다!' : `${turnPlayer.name}님 턴 진행 중...`;
   }
 
-  // 1. 플레이어 턴 순서 표시 대시보드
   const playersContainer = document.getElementById('players-list');
   playersContainer.innerHTML = '';
   gameState.players.forEach((p, idx) => {
@@ -175,7 +185,6 @@ function renderUI() {
     playersContainer.appendChild(card);
   });
 
-  // 2. 마름모 카지노 6개 렌더링
   const casinosContainer = document.getElementById('casinos-container');
   casinosContainer.innerHTML = '';
 
@@ -209,7 +218,6 @@ function renderUI() {
     casinosContainer.appendChild(wrapper);
   }
 
-  // 3. 하단 주사위 컨트롤 및 오름차순 자동 정렬
   const rollBtn = document.getElementById('roll-btn');
   const diceArea = document.getElementById('rolled-dice-area');
   diceArea.innerHTML = '';
@@ -224,7 +232,6 @@ function renderUI() {
       rollBtn.disabled = true;
       rollBtn.style.opacity = '0.4';
 
-      // 눈금별 그룹화 및 오름차순 배치
       const counts = {};
       myPlayer.currentRoll.forEach(v => counts[v] = (counts[v] || 0) + 1);
 
