@@ -87,10 +87,26 @@ function startRound(room) {
 
 function checkNextTurn(room) {
   const activePlayers = room.players.filter(p => p.diceCount > 0);
+  
+  // 주사위가 남은 사람이 없으면 라운드 정산
   if (activePlayers.length === 0) {
     resolveRound(room);
     return;
   }
+
+  // 다음 주사위가 남은 플레이어 찾기
+  let nextIdx = (room.currentTurnIndex + 1) % room.players.length;
+  let safetyCounter = 0;
+  
+  while (room.players[nextIdx].diceCount === 0 && safetyCounter < room.players.length) {
+    nextIdx = (nextIdx + 1) % room.players.length;
+    safetyCounter++;
+  }
+
+  room.currentTurnIndex = nextIdx;
+  room.players[room.currentTurnIndex].currentRoll = [];
+  broadcastGameState(room.code);
+}
 
   let nextIdx = (room.currentTurnIndex + 1) % room.players.length;
   while (room.players[nextIdx].diceCount === 0) {
@@ -114,7 +130,6 @@ function resolveRound(room) {
     });
     counts.sort((a, b) => b.count - a.count);
 
-    // 동점 폭파
     let validWinners = [];
     let i = 0;
     while (i < counts.length) {
@@ -172,25 +187,29 @@ function broadcastGameState(roomCode) {
     currentTurnIndex: room.currentTurnIndex,
     currentTurnPlayerId: room.players[room.currentTurnIndex]?.id,
     players: room.players,
-    casinos: room.casinos,
-    takenColors: room.players.map(p => p.colorKey)
+    casinos: room.casinos
   });
 }
 
+// 미선택 색상 찾기 헬퍼
+function getAvailableColor(room) {
+  const taken = room.players.map(p => p.colorKey);
+  const keys = ['black', 'white', 'red', 'blue'];
+  return keys.find(k => !taken.includes(k)) || 'black';
+}
+
 io.on('connection', (socket) => {
-  socket.on('createRoom', ({ name, color }) => {
+  socket.on('createRoom', ({ name }) => {
     let code = generateRoomCode();
     while (rooms[code]) code = generateRoomCode();
-
-    const selectedColor = COLOR_MAP[color] || COLOR_MAP.black;
 
     const newPlayer = {
       id: socket.id,
       name: name || '플레이어1',
-      colorKey: color,
-      color: selectedColor.code,
-      textColor: selectedColor.text,
-      colorName: selectedColor.name,
+      colorKey: 'black',
+      color: COLOR_MAP.black.code,
+      textColor: COLOR_MAP.black.text,
+      colorName: COLOR_MAP.black.name,
       diceCount: 8,
       currentRoll: [],
       totalMoney: 0,
@@ -213,22 +232,21 @@ io.on('connection', (socket) => {
     broadcastGameState(code);
   });
 
-  socket.on('joinRoom', ({ name, color, roomCode }) => {
+  socket.on('joinRoom', ({ name, roomCode }) => {
     const code = roomCode.toUpperCase();
     const room = rooms[code];
 
     if (!room) return socket.emit('errorMsg', '존재하지 않는 방 코드입니다.');
     if (room.players.length >= 4) return socket.emit('errorMsg', '방이 가득 찼습니다. (최대 4인)');
     if (room.state !== 'WAITING') return socket.emit('errorMsg', '이미 게임이 진행 중입니다.');
-    if (room.players.some(p => p.colorKey === color)) {
-      return socket.emit('errorMsg', '이미 다른 플레이어가 선택한 색상입니다.');
-    }
 
-    const selectedColor = COLOR_MAP[color] || COLOR_MAP.white;
+    const defaultColorKey = getAvailableColor(room);
+    const selectedColor = COLOR_MAP[defaultColorKey];
+
     const newPlayer = {
       id: socket.id,
       name: name || `플레이어${room.players.length + 1}`,
-      colorKey: color,
+      colorKey: defaultColorKey,
       color: selectedColor.code,
       textColor: selectedColor.text,
       colorName: selectedColor.name,
@@ -242,9 +260,32 @@ io.on('connection', (socket) => {
     socket.join(code);
     socket.emit('roomJoined', { roomCode: code, playerId: socket.id });
     
-    io.to(code).emit('chatMessage', { system: true, text: `${newPlayer.name}(${newPlayer.colorName})님이 입장하셨습니다.` });
+    io.to(code).emit('chatMessage', { system: true, text: `${newPlayer.name}님이 입장하셨습니다.` });
     broadcastGameState(code);
   });
+
+  // 대기실 안에서 색상 변경 처리
+ socket.on('changeColor', ({ roomCode, colorKey }) => {
+  const room = rooms[roomCode];
+  if (!room || room.state !== 'WAITING') return;
+
+  // 이미 누군가 선점했는지 엄격히 재검증
+  const isTaken = room.players.some(p => p.colorKey === colorKey);
+  if (isTaken) {
+    return socket.emit('errorMsg', '방금 다른 플레이어가 선점한 색상입니다.');
+  }
+
+  const player = room.players.find(p => p.id === socket.id);
+  if (player && COLOR_MAP[colorKey]) {
+    const cObj = COLOR_MAP[colorKey];
+    player.colorKey = colorKey;
+    player.color = cObj.code;
+    player.textColor = cObj.text;
+    player.colorName = cObj.name;
+    
+    broadcastGameState(roomCode);
+  }
+});
 
   socket.on('startGame', ({ roomCode }) => {
     const room = rooms[roomCode];
@@ -253,7 +294,7 @@ io.on('connection', (socket) => {
 
     room.round = 1;
     startRound(room);
-    io.to(roomCode).emit('chatMessage', { system: true, text: '게임 시작! 무작위로 턴 순서가 정해졌습니다.' });
+    io.to(roomCode).emit('chatMessage', { system: true, text: '게임 시작! 무작위로 턴 순서가 결정되었습니다.' });
   });
 
   socket.on('rollDice', ({ roomCode }) => {
@@ -317,7 +358,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 이탈 예외 처리 디버깅 반영
   socket.on('disconnect', () => {
     Object.keys(rooms).forEach(code => {
       const room = rooms[code];
@@ -345,4 +385,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`서버 실행 포트: ${PORT}`));
+server.listen(PORT, () => console.log(`서버 포트: ${PORT}`));
