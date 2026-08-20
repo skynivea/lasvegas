@@ -3,26 +3,24 @@ const socket = io({ transports: ['websocket', 'polling'] });
 let currentRoomCode = null;
 let myPlayerId = null;
 let gameState = null;
-let selectedColorKey = 'black';
-
-function selectColor(colorKey, el) {
-  if (el.classList.contains('disabled')) return;
-  selectedColorKey = colorKey;
-  document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
-  el.classList.add('selected');
-}
 
 function createRoom() {
   const name = document.getElementById('player-name-input').value.trim();
   if (!name) return alert('닉네임을 입력하세요.');
-  socket.emit('createRoom', { name, color: selectedColorKey });
+  socket.emit('createRoom', { name });
 }
 
 function joinRoom() {
   const name = document.getElementById('player-name-input').value.trim();
   const roomCode = document.getElementById('room-code-input').value.trim();
   if (!name || !roomCode) return alert('닉네임과 방 코드를 입력하세요.');
-  socket.emit('joinRoom', { name, color: selectedColorKey, roomCode });
+  socket.emit('joinRoom', { name, roomCode });
+}
+
+function changeMyColor(colorKey) {
+  if (currentRoomCode) {
+    socket.emit('changeColor', { roomCode: currentRoomCode, colorKey });
+  }
 }
 
 function startGame() {
@@ -142,16 +140,11 @@ function renderUI() {
 
   document.getElementById('round-num').innerText = gameState.round;
 
-  // 선점된 색상 비활성화 처리
-  if (gameState.takenColors) {
-    document.querySelectorAll('.color-btn').forEach(btn => {
-      const c = btn.getAttribute('data-color');
-      if (gameState.takenColors.includes(c)) {
-        btn.classList.add('disabled');
-      } else {
-        btn.classList.remove('disabled');
-      }
-    });
+  const colorPanel = document.getElementById('color-select-panel');
+  if (gameState.state === 'WAITING') {
+    colorPanel.classList.remove('hidden');
+  } else {
+    colorPanel.classList.add('hidden');
   }
 
   const startBtn = document.getElementById('start-btn');
@@ -161,11 +154,26 @@ function renderUI() {
   const statusText = document.getElementById('status-text');
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId;
   if (gameState.state === 'WAITING') {
-    statusText.innerText = '플레이어를 기다리는 중...';
+    statusText.innerText = '대기실 - 주사위 색을 정해주세요.';
   } else if (gameState.state === 'PLAYING') {
     const turnPlayer = gameState.players[gameState.currentTurnIndex];
     statusText.innerText = isMyTurn ? '🔥 당신의 턴입니다!' : `${turnPlayer.name}님 턴 진행 중...`;
   }
+
+  // 플레이어 카드 & 실시간 색상 점유 UI 처리
+  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+  const takenColors = gameState.players.map(p => p.colorKey);
+
+  document.querySelectorAll('.color-btn').forEach(btn => {
+    const btnColor = btn.getAttribute('data-color');
+    btn.classList.remove('selected', 'disabled');
+
+    if (myPlayer && myPlayer.colorKey === btnColor) {
+      btn.classList.add('selected');
+    } else if (takenColors.includes(btnColor)) {
+      btn.classList.add('disabled');
+    }
+  });
 
   const playersContainer = document.getElementById('players-list');
   playersContainer.innerHTML = '';
@@ -177,7 +185,7 @@ function renderUI() {
 
     card.innerHTML = `
       <div style="font-weight:bold; font-size:13px; color:${p.color}">
-        ${idx + 1}번 턴: ${p.name} ${p.id === gameState.hostId ? '👑' : ''}
+        ${gameState.state === 'PLAYING' ? `${idx + 1}번 턴: ` : ''}${p.name} (${p.colorName}) ${p.id === gameState.hostId ? '👑' : ''}
       </div>
       <div style="font-size:11px; color:#aaa; margin-top:3px;">주사위: <b>${p.diceCount}개</b></div>
       <div style="font-size:11px; color:#aaa;">소지금: <b>$${p.totalMoney.toLocaleString()}</b></div>
@@ -221,8 +229,6 @@ function renderUI() {
   const rollBtn = document.getElementById('roll-btn');
   const diceArea = document.getElementById('rolled-dice-area');
   diceArea.innerHTML = '';
-
-  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
 
   if (gameState.state === 'PLAYING' && isMyTurn && myPlayer) {
     if (myPlayer.currentRoll.length === 0) {
