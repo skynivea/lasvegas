@@ -59,13 +59,11 @@ function setupCasinosForRound(room) {
 
 function sortTurnOrder(room) {
   if (room.round === 1) {
-    // 1라운드: 무작위 셔플
     for (let i = room.players.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [room.players[i], room.players[j]] = [room.players[j], room.players[i]];
     }
   } else {
-    // 2~4라운드: 돈이 가장 많은 사람부터 진행 (동점 시 카드 많은 순)
     room.players.sort((a, b) => {
       if (b.totalMoney !== a.totalMoney) return b.totalMoney - a.totalMoney;
       return b.cardsWon - a.cardsWon;
@@ -174,7 +172,8 @@ function broadcastGameState(roomCode) {
     currentTurnIndex: room.currentTurnIndex,
     currentTurnPlayerId: room.players[room.currentTurnIndex]?.id,
     players: room.players,
-    casinos: room.casinos
+    casinos: room.casinos,
+    takenColors: room.players.map(p => p.colorKey)
   });
 }
 
@@ -254,7 +253,7 @@ io.on('connection', (socket) => {
 
     room.round = 1;
     startRound(room);
-    io.to(roomCode).emit('chatMessage', { system: true, text: '게임이 시작되었습니다! 순서가 무작위 결정되었습니다.' });
+    io.to(roomCode).emit('chatMessage', { system: true, text: '게임 시작! 무작위로 턴 순서가 정해졌습니다.' });
   });
 
   socket.on('rollDice', ({ roomCode }) => {
@@ -269,7 +268,6 @@ io.on('connection', (socket) => {
     for (let i = 0; i < currPlayer.diceCount; i++) {
       rolls.push(Math.floor(Math.random() * 6) + 1);
     }
-    // 오름차순 정렬
     rolls.sort((a, b) => a - b);
     currPlayer.currentRoll = rolls;
 
@@ -319,19 +317,27 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 이탈 예외 처리 디버깅 반영
   socket.on('disconnect', () => {
     Object.keys(rooms).forEach(code => {
       const room = rooms[code];
       const pIdx = room.players.findIndex(p => p.id === socket.id);
       if (pIdx !== -1) {
         const leftPlayer = room.players[pIdx];
+        const isTurnPlayer = room.currentTurnIndex === pIdx;
+
         room.players.splice(pIdx, 1);
         io.to(code).emit('chatMessage', { system: true, text: `${leftPlayer.name}님이 퇴장하셨습니다.` });
+
         if (room.players.length === 0) {
           delete rooms[code];
         } else {
           if (room.hostId === socket.id) room.hostId = room.players[0].id;
-          broadcastGameState(code);
+          if (room.state === 'PLAYING' && isTurnPlayer) {
+            checkNextTurn(room);
+          } else {
+            broadcastGameState(code);
+          }
         }
       }
     });
@@ -339,4 +345,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`서버 실행 중: ${PORT}`));
+server.listen(PORT, () => console.log(`서버 실행 포트: ${PORT}`));
