@@ -17,9 +17,9 @@ function joinRoom() {
   socket.emit('joinRoom', { name, roomCode });
 }
 
-function changeMyColor(colorKey) {
+function pickColor(colorKey) {
   if (currentRoomCode) {
-    socket.emit('changeColor', { roomCode: currentRoomCode, colorKey });
+    socket.emit('pickColor', { roomCode: currentRoomCode, colorKey });
   }
 }
 
@@ -141,8 +141,36 @@ function renderUI() {
   document.getElementById('round-num').innerText = gameState.round;
 
   const colorPanel = document.getElementById('color-select-panel');
-  if (gameState.state === 'WAITING') {
+  const colorBtnsContainer = document.getElementById('color-buttons-container');
+
+  if (gameState.state === 'COLOR_SELECTION') {
     colorPanel.classList.remove('hidden');
+    colorBtnsContainer.innerHTML = '';
+
+    const COLOR_MAP = {
+      black: { code: '#212529', name: '검정', text: '#FFFFFF' },
+      white: { code: '#F8F9FA', name: '하양', text: '#212529' },
+      red: { code: '#E63946', name: '빨강', text: '#FFFFFF' },
+      blue: { code: '#1D3557', name: '파랑', text: '#FFFFFF' }
+    };
+
+    Object.keys(gameState.colorSelectionMap).forEach(key => {
+      const data = gameState.colorSelectionMap[key];
+      const colorObj = COLOR_MAP[key];
+
+      const btn = document.createElement('button');
+      btn.className = `color-btn ${data.selectedBy ? 'selected' : ''}`;
+      btn.style.backgroundColor = colorObj.code;
+      btn.style.color = colorObj.text;
+
+      if (data.selectedBy) {
+        btn.innerText = `${colorObj.name}\n(${data.selectedBy}: ${data.orderNum}번 턴)`;
+      } else {
+        btn.innerText = `${colorObj.name}\n[선택]`;
+        btn.onclick = () => pickColor(key);
+      }
+      colorBtnsContainer.appendChild(btn);
+    });
   } else {
     colorPanel.classList.add('hidden');
   }
@@ -153,42 +181,42 @@ function renderUI() {
 
   const statusText = document.getElementById('status-text');
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId;
+  
   if (gameState.state === 'WAITING') {
-    statusText.innerText = '대기실 - 주사위 색을 정해주세요.';
+    statusText.innerText = '대기실 - 플레이어가 모두 들어오면 방장이 시작 버튼을 누르세요.';
+  } else if (gameState.state === 'COLOR_SELECTION') {
+    statusText.innerText = '주사위 색상을 선택해 선 순서를 정해주세요!';
   } else if (gameState.state === 'PLAYING') {
     const turnPlayer = gameState.players[gameState.currentTurnIndex];
     statusText.innerText = isMyTurn ? '🔥 당신의 턴입니다!' : `${turnPlayer.name}님 턴 진행 중...`;
   }
 
-  // 플레이어 카드 & 실시간 색상 점유 UI 처리
-  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
-  const takenColors = gameState.players.map(p => p.colorKey);
-
-  document.querySelectorAll('.color-btn').forEach(btn => {
-    const btnColor = btn.getAttribute('data-color');
-    btn.classList.remove('selected', 'disabled');
-
-    if (myPlayer && myPlayer.colorKey === btnColor) {
-      btn.classList.add('selected');
-    } else if (takenColors.includes(btnColor)) {
-      btn.classList.add('disabled');
-    }
-  });
-
+  // 플레이어 목록 표시
   const playersContainer = document.getElementById('players-list');
   playersContainer.innerHTML = '';
   gameState.players.forEach((p, idx) => {
     const card = document.createElement('div');
     const isTurn = gameState.state === 'PLAYING' && idx === gameState.currentTurnIndex;
+    
     card.className = `player-card ${isTurn ? 'active' : ''}`;
     card.style.borderTopColor = p.color;
 
+    if (gameState.state === 'PLAYING' && p.diceCount === 0) {
+      card.style.opacity = '0.5';
+    } else {
+      card.style.opacity = '1';
+    }
+
     card.innerHTML = `
       <div style="font-weight:bold; font-size:13px; color:${p.color}">
-        ${gameState.state === 'PLAYING' ? `${idx + 1}번 턴: ` : ''}${p.name} (${p.colorName}) ${p.id === gameState.hostId ? '👑' : ''}
+        ${p.turnOrder ? `${p.turnOrder}번 순서: ` : ''}${p.name} ${p.id === gameState.hostId ? '👑' : ''}
       </div>
-      <div style="font-size:11px; color:#aaa; margin-top:3px;">주사위: <b>${p.diceCount}개</b></div>
-      <div style="font-size:11px; color:#aaa;">소지금: <b>$${p.totalMoney.toLocaleString()}</b></div>
+      <div style="font-size:12px; margin-top:4px;">
+        🎲 주사위: <b style="color:#d4af37; font-size:14px;">${p.diceCount}개</b>
+      </div>
+      <div style="font-size:11px; color:#aaa; margin-top:2px;">
+        💵 소지금: <b>$${p.totalMoney.toLocaleString()}</b>
+      </div>
     `;
     playersContainer.appendChild(card);
   });
@@ -229,6 +257,8 @@ function renderUI() {
   const rollBtn = document.getElementById('roll-btn');
   const diceArea = document.getElementById('rolled-dice-area');
   diceArea.innerHTML = '';
+
+  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
 
   if (gameState.state === 'PLAYING' && isMyTurn && myPlayer) {
     if (myPlayer.currentRoll.length === 0) {
