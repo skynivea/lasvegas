@@ -54,6 +54,20 @@ function setupCasinos(room) {
 }
 
 io.on('connection', (socket) => {
+  // 💬 실시간 채팅 수신 및 방 전체에 브로드캐스트
+  socket.on('sendChat', ({ roomCode, message }) => {
+    const room = ROOMS[roomCode];
+    if (!room) return;
+
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player || !message) return;
+
+    io.to(roomCode).emit('receiveChat', {
+      senderName: player.name,
+      color: player.color,
+      message: message
+    });
+  });
   socket.on('createRoom', ({ name }) => {
     const roomCode = generateRoomCode();
     ROOMS[roomCode] = {
