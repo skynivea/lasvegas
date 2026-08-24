@@ -10,6 +10,43 @@ function createRoom() {
   if (!name) return alert('닉네임을 입력하세요.');
   socket.emit('createRoom', { name });
 }
+// 💬 채팅 전송 함수
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (text && currentRoomCode) {
+    socket.emit('sendChat', { roomCode: currentRoomCode, message: text });
+    input.value = '';
+  }
+}
+
+// 💬 채팅 메시지 수신 핸들러 (화면에 렌더링 및 자동 스크롤)
+socket.on('receiveChat', ({ senderName, color, message }) => {
+  const chatMessages = document.getElementById('chat-messages');
+  if (!chatMessages) return;
+
+  const msgEl = document.createElement('div');
+  msgEl.style.marginBottom = '8px';
+  msgEl.style.wordBreak = 'break-all';
+  msgEl.style.lineHeight = '1.4';
+
+  msgEl.innerHTML = `
+    <span style="font-weight: bold; color: ${color};">[${senderName}]</span> 
+    <span style="color: #eee;">${escapeHTML(message)}</span>
+  `;
+
+  chatMessages.appendChild(msgEl);
+  
+  // 새 메시지 도착 시 최하단으로 자동 스크롤
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+});
+
+// XSS 방지용 HTML 이스케이프 함수
+function escapeHTML(str) {
+  return str.replace(/[&<>'"]/g, 
+    tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+  );
+}
 
 function joinRoom() {
   const name = document.getElementById('player-name-input').value.trim();
