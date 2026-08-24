@@ -35,9 +35,10 @@ const CUBE_ROTATIONS = {
   4: { x: 90,   y: 0 }
 };
 
-// 🎲 주사위 굴리기 핸들러
+// 🎲 주사위 굴리기 핸들러 (버튼 동작 보장)
 function handleRollDiceClick() {
   if (!currentRoomCode || isRollingAnimation) return;
+
   const myPlayer = gameState?.players.find(p => p.id === myPlayerId);
   if (!myPlayer || myPlayer.diceCount <= 0) return;
 
@@ -54,7 +55,7 @@ function handleRollDiceClick() {
   for (let i = 0; i < count; i++) {
     const container = document.createElement('div');
     container.className = 'cube-container anim-physics-drop';
-    container.style.animationDelay = `${i * 0.06}s`;
+    container.style.animationDelay = `${i * 0.05}s`;
 
     const cube = document.createElement('div');
     cube.className = 'cube-3d';
@@ -73,17 +74,17 @@ function handleRollDiceClick() {
     cubes.push(cube);
   }
 
-  // 3D 무작위 회전
+  // 3D 회전 효과
   cubes.forEach((cube) => {
     const randomRotX = (Math.floor(Math.random() * 4) + 4) * 360;
     const randomRotY = (Math.floor(Math.random() * 4) + 4) * 360;
     cube.style.transform = `rotateX(${randomRotX}deg) rotateY(${randomRotY}deg)`;
   });
 
-  // 서버에 굴림 요청
+  // 서버 통신
   setTimeout(() => {
     socket.emit('rollDice', { roomCode: currentRoomCode });
-  }, 400);
+  }, 350);
 }
 
 function animateCubesToFinalAndSort(results, player) {
@@ -99,9 +100,7 @@ function animateCubesToFinalAndSort(results, player) {
   cubes.forEach((cube, idx) => {
     const finalVal = results[idx] || 1;
     const rot = CUBE_ROTATIONS[finalVal];
-    const finalX = 1440 + rot.x;
-    const finalY = 1440 + rot.y;
-    cube.style.transform = `rotateX(${finalX}deg) rotateY(${finalY}deg)`;
+    cube.style.transform = `rotateX(${1440 + rot.x}deg) rotateY(${1440 + rot.y}deg)`;
   });
 
   setTimeout(() => {
@@ -143,7 +142,7 @@ function animateCubesToFinalAndSort(results, player) {
     });
 
     isRollingAnimation = false;
-  }, 1000);
+  }, 900);
 }
 
 function selectDiceToPlace(diceValue) {
@@ -152,14 +151,20 @@ function selectDiceToPlace(diceValue) {
   }
 }
 
-function triggerMoneyDealAnimation() {
+// 💵 지폐 더미에서 1번~6번 카지노 순차 딜링 연출
+function runMoneyDealingSequence() {
+  renderUI(); // 화면 갱신 후
+
   const allBills = document.querySelectorAll('.real-bill');
   allBills.forEach((bill, idx) => {
-    bill.classList.remove('anim-deal');
-    void bill.offsetWidth; // 리플로우 강제
+    bill.style.opacity = '0';
+    bill.classList.remove('anim-fly-deal');
+
+    // 1번 카지노부터 차례대로 착-착 날아오는 시간차 부여
     setTimeout(() => {
-      bill.classList.add('anim-deal');
-    }, idx * 80);
+      bill.style.opacity = '1';
+      bill.classList.add('anim-fly-deal');
+    }, idx * 120);
   });
 }
 
@@ -201,7 +206,7 @@ function create2DDiceHTML(val, colorHex, textColorHex) {
   return `<div class="dice-face-2d" style="background-color:${colorHex}; color:${textColorHex};">${getDotsHTML(val)}</div>`;
 }
 
-// 소켓 이벤트 리스너
+// 소켓 리스너
 socket.on('roomCreated', ({ roomCode, playerId }) => {
   currentRoomCode = roomCode;
   myPlayerId = playerId;
@@ -228,9 +233,8 @@ socket.on('closeModal', () => {
   btn.innerText = "확인 완료";
 });
 
-socket.on('dealMoneyAnimation', () => {
-  renderUI();
-  setTimeout(triggerMoneyDealAnimation, 50);
+socket.on('startMoneyDealingSequence', () => {
+  runMoneyDealingSequence();
 });
 
 socket.on('gameStateUpdate', (state) => {
@@ -239,9 +243,14 @@ socket.on('gameStateUpdate', (state) => {
 
   const myPlayer = gameState.players.find(p => p.id === myPlayerId);
 
+  // 애니메이션 중 굴림 결과 도착 시
   if (isRollingAnimation && myPlayer && myPlayer.currentRoll.length > 0 && oldRoll.length === 0) {
     animateCubesToFinalAndSort(myPlayer.currentRoll, myPlayer);
   } else {
+    // 턴 교체 시 애니메이션 플래그 복구 안전장치
+    if (gameState.currentTurnPlayerId === myPlayerId && myPlayer && myPlayer.currentRoll.length === 0) {
+      isRollingAnimation = false;
+    }
     renderUI();
   }
 });
@@ -262,7 +271,7 @@ socket.on('roundResolved', (data) => {
     let bodyHTML = `<h3 style="text-align:center; color:#ffd700; margin-bottom:15px;">우승자: ${data.winner.name} ($${data.winner.totalMoney.toLocaleString()})</h3><ol style="padding-left:20px;">`;
     const sorted = [...data.players].sort((a,b) => b.totalMoney - a.totalMoney);
     sorted.forEach(p => {
-      bodyHTML += `<li><b>${p.name}</b>: $${p.totalMoney.toLocaleString()} (${p.cardsWon}장)</li>`;
+      bodyHTML += `<li><b>${p.name}</b>: $${p.totalMoney.toLocaleString()}</li>`;
     });
     bodyHTML += `</ol>`;
     modalBody.innerHTML = bodyHTML;
@@ -276,7 +285,7 @@ socket.on('roundResolved', (data) => {
       if (data.results[c] && data.results[c].length > 0) {
         bodyHTML += data.results[c].map(w => `${w.playerName} ($${w.amount.toLocaleString()})`).join(', ');
       } else {
-        bodyHTML += `<span style="color:#888;">획득자 없음 (폭파)</span>`;
+        bodyHTML += `<span style="color:#888;">획득자 없음 (폭파/무효)</span>`;
       }
       bodyHTML += `</div>`;
     }
@@ -402,19 +411,13 @@ function renderUI() {
   }
 
   const rollBtn = document.getElementById('roll-btn');
-  const diceArea = document.getElementById('rolled-dice-area');
   const myPlayer = gameState.players.find(p => p.id === myPlayerId);
 
-  if (gameState.state === 'PLAYING' && isMyTurn && myPlayer && myPlayer.diceCount > 0) {
-    if (myPlayer.currentRoll.length === 0) {
-      rollBtn.disabled = false;
-      rollBtn.style.opacity = '1';
-      rollBtn.style.cursor = 'pointer';
-    } else {
-      rollBtn.disabled = true;
-      rollBtn.style.opacity = '0.4';
-      rollBtn.style.cursor = 'not-allowed';
-    }
+  // 주사위 굴리기 버튼 상태 갱신
+  if (gameState.state === 'PLAYING' && isMyTurn && myPlayer && myPlayer.diceCount > 0 && myPlayer.currentRoll.length === 0) {
+    rollBtn.disabled = false;
+    rollBtn.style.opacity = '1';
+    rollBtn.style.cursor = 'pointer';
   } else {
     rollBtn.disabled = true;
     rollBtn.style.opacity = '0.4';
