@@ -145,12 +145,116 @@ function animateCubesToFinalAndSort(results, player) {
   }, 900);
 }
 
+// 카지노에 주사위 배치 핸들러 (클릭 즉시 내 덱에서 주사위 제거)
 function selectDiceToPlace(diceValue) {
-  if (currentRoomCode && !isRollingAnimation) {
-    socket.emit('placeDice', { roomCode: currentRoomCode, diceValue });
+  if (!currentRoomCode || isRollingAnimation) return;
+
+  const myPlayer = gameState?.players.find(p => p.id === myPlayerId);
+  if (!myPlayer || myPlayer.currentRoll.length === 0) return;
+
+  // 1. 중복 클릭 방지 플래그 설정
+  isRollingAnimation = true;
+
+  // 2. [핵심] 내 덱 화면에서 주사위 즉시 제거 (복제 현상 해결)
+  const diceArea = document.getElementById('rolled-dice-area');
+  if (diceArea) {
+    diceArea.innerHTML = '<span style="font-size: 12px; color: #ffd700;">주사위 배치 중...</span>';
   }
+
+  // 3. 서버로 주사위 배치 요청
+  socket.emit('placeDice', { roomCode: currentRoomCode, diceValue });
 }
 
+// 주사위 굴림 결과 정렬 및 생성 부분
+function animateCubesToFinalAndSort(results, player) {
+  const diceArea = document.getElementById('rolled-dice-area');
+  const cubes = diceArea.querySelectorAll('.cube-3d');
+
+  if (cubes.length === 0) {
+    isRollingAnimation = false;
+    renderUI();
+    return;
+  }
+
+  cubes.forEach((cube, idx) => {
+    const finalVal = results[idx] || 1;
+    const rot = CUBE_ROTATIONS[finalVal];
+    cube.style.transform = `rotateX(${1440 + rot.x}deg) rotateY(${1440 + rot.y}deg)`;
+  });
+
+  setTimeout(() => {
+    diceArea.innerHTML = '';
+    const counts = {};
+    results.forEach(v => counts[v] = (counts[v] || 0) + 1);
+
+    Object.keys(counts).sort((a,b) => parseInt(a) - parseInt(b)).forEach(valStr => {
+      const val = parseInt(valStr);
+      const group = document.createElement('div');
+      group.className = 'dice-group';
+      group.title = `${val}번 카지노에 배치`;
+      
+      // 클릭 시 해당 그룹 주사위 배치 및 내 덱에서 즉시 삭제
+      group.onclick = () => selectDiceToPlace(val);
+
+      for (let i = 0; i < counts[val]; i++) {
+        const miniCubeContainer = document.createElement('div');
+        miniCubeContainer.className = 'cube-container';
+        miniCubeContainer.style.transform = 'scale(0.85)';
+
+        const miniCube = document.createElement('div');
+        miniCube.className = 'cube-3d';
+
+        for (let face = 1; face <= 6; face++) {
+          const faceEl = document.createElement('div');
+          faceEl.className = `cube-face face-${face}`;
+          faceEl.style.backgroundColor = player.color;
+          faceEl.style.color = player.textColor;
+          faceEl.innerHTML = getDotsHTML(face);
+          miniCube.appendChild(faceEl);
+        }
+
+        const rot = CUBE_ROTATIONS[val];
+        miniCube.style.transform = `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`;
+        miniCubeContainer.appendChild(miniCube);
+        group.appendChild(miniCubeContainer);
+      }
+
+      diceArea.appendChild(group);
+    });
+
+    // 주사위 선택 대기 상태 진입
+    isRollingAnimation = false;
+  }, 900);
+}
+
+// UI 렌더링 시 주사위 덱 상태 보완
+function renderUI() {
+  if (!gameState || isRollingAnimation) return;
+
+  // ... 기존 renderUI 상단 로직 동일 ...
+
+  const rollBtn = document.getElementById('roll-btn');
+  const diceArea = document.getElementById('rolled-dice-area');
+  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+
+  // 내 턴이고, 굴린 주사위도 없고, 남은 주사위도 없는 상태(배치 완료 후)라면 덱 비우기
+  if (myPlayer && myPlayer.currentRoll.length === 0 && !isRollingAnimation) {
+    if (diceArea && !diceArea.querySelector('.cube-container')) {
+      diceArea.innerHTML = '';
+    }
+  }
+
+  // 주사위 굴리기 버튼 활성화 로직
+  if (gameState.state === 'PLAYING' && isMyTurn && myPlayer && myPlayer.diceCount > 0 && myPlayer.currentRoll.length === 0) {
+    rollBtn.disabled = false;
+    rollBtn.style.opacity = '1';
+    rollBtn.style.cursor = 'pointer';
+  } else {
+    rollBtn.disabled = true;
+    rollBtn.style.opacity = '0.4';
+    rollBtn.style.cursor = 'not-allowed';
+  }
+}
 // 💵 지폐 더미에서 1번~6번 카지노 순차 딜링 연출
 function runMoneyDealingSequence() {
   renderUI(); // 화면 갱신 후
