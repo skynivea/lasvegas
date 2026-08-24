@@ -78,7 +78,6 @@
     .casino-badge.top-right { top: 10px; right: 15px; }
     .casino-badge.bottom-left { bottom: 10px; left: 15px; }
 
-    /* 지폐 패배 애니메이션 스타일 */
     .bills-container { display: flex; justify-content: center; align-items: center; margin-top: 5px; z-index: 2; min-height: 40px; }
     
     @keyframes dealBillCard {
@@ -97,14 +96,44 @@
     .real-bill:hover { transform: translateY(-5px) scale(1.1); z-index: 10; }
 
     .placed-dice-area { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 5px; width: 100%; max-height: 80px; z-index: 2; padding: 5px; }
-    .dice-3d-box { perspective: 400px; display: inline-block; width: 36px; height: 36px; margin: 3px; }
-    .dice-face {
-      width: 36px; height: 36px; border-radius: 8px; position: relative;
-      box-shadow: inset 0 0 6px rgba(0,0,0,0.4), 0 4px 8px rgba(0,0,0,0.5);
-      display: inline-block; cursor: pointer; transition: transform 0.3s; border: 1px solid rgba(255,255,255,0.2);
+
+    /* =========================================================
+       🎲 리얼 3D CUBE 주사위 모션 애니메이션 시스템 
+       ========================================================= */
+    .controls-panel {
+      background: linear-gradient(180deg, #1f1610, #120d09); padding: 15px 20px;
+      border-radius: 15px; margin-top: 12px; border: 2px solid #3d2b1f;
+      display: flex; align-items: center; justify-content: space-between; min-height: 100px;
+    }
+    .dice-roll-area { display: flex; gap: 12px; align-items: center; min-height: 60px; flex-wrap: wrap; perspective: 1000px; }
+
+    /* 3D 큐브 컨테이너 */
+    .cube-container {
+      width: 40px; height: 40px; position: relative; perspective: 600px;
+      display: inline-block; transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
     }
 
-    .dice-dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; background-color: currentColor; transform: translate(-50%, -50%); }
+    .cube-3d {
+      width: 100%; height: 100%; position: absolute; transform-style: preserve-3d;
+      transition: transform 1.2s cubic-bezier(0.1, 0.85, 0.25, 1);
+    }
+
+    .cube-face {
+      position: absolute; width: 40px; height: 40px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.4);
+      box-shadow: inset 0 0 8px rgba(0,0,0,0.5), 0 2px 5px rgba(0,0,0,0.4);
+    }
+
+    /* 3D 정육면체 6면 위치 잡기 (반지름 20px) */
+    .cube-face.face-1 { transform: rotateY(  0deg) translateZ(20px); }
+    .cube-face.face-6 { transform: rotateY(180deg) translateZ(20px); }
+    .cube-face.face-2 { transform: rotateY( 90deg) translateZ(20px); }
+    .cube-face.face-5 { transform: rotateY(-90deg) translateZ(20px); }
+    .cube-face.face-3 { transform: rotateX( 90deg) translateZ(20px); }
+    .cube-face.face-4 { transform: rotateX(-90deg) translateZ(20px); }
+
+    /* 주사위 점 위치 지정 */
+    .dice-dot { position: absolute; width: 8px; height: 8px; border-radius: 50%; background-color: currentColor; transform: translate(-50%, -50%); }
     .dot-center { top: 50%; left: 50%; }
     .dot-tl { top: 25%; left: 25%; }
     .dot-tr { top: 25%; left: 75%; }
@@ -113,26 +142,37 @@
     .dot-ml { top: 50%; left: 25%; }
     .dot-mr { top: 50%; left: 75%; }
 
-    @keyframes dropAndBounce {
-      0% { transform: translateY(-80px) scale(0.3) rotateX(0deg); opacity: 0; }
-      60% { transform: translateY(10px) scale(1.1) rotateX(360deg); opacity: 1; }
-      80% { transform: translateY(-5px) scale(0.95); }
-      100% { transform: translateY(0) scale(1); }
+    /* 물리 낙하 튕김 키프레임 */
+    @keyframes physicsDropBounce {
+      0% { transform: translateY(-140px) scale(0.2); opacity: 0; }
+      50% { transform: translateY(0px) scale(1.1); opacity: 1; }
+      70% { transform: translateY(-25px) scale(0.9); }
+      85% { transform: translateY(0px) scale(1.02); }
+      95% { transform: translateY(-8px); }
+      100% { transform: translateY(0); }
     }
-    @keyframes spinRoll {
-      0% { transform: rotateX(0deg) rotateY(0deg); }
-      100% { transform: rotateX(720deg) rotateY(1080deg); }
-    }
-    .anim-drop { animation: dropAndBounce 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-    .anim-spin { animation: spinRoll 0.8s ease-in-out infinite; }
+    .anim-physics-drop { animation: physicsDropBounce 0.8s ease-out forwards; }
 
-    .controls-panel {
-      background: linear-gradient(180deg, #1f1610, #120d09); padding: 15px 20px;
-      border-radius: 15px; margin-top: 12px; border: 2px solid #3d2b1f;
-      display: flex; align-items: center; justify-content: space-between; min-height: 85px;
+    /* 정렬(Sort) 그룹화 카드 디자인 */
+    .dice-group {
+      display: flex; gap: 6px; padding: 6px 12px; background: rgba(0,0,0,0.5);
+      border: 2px solid #d4af37; border-radius: 12px; cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      animation: slideInGroup 0.4s ease-out forwards;
     }
-    .dice-roll-area { display: flex; gap: 10px; align-items: center; min-height: 45px; flex-wrap: wrap; }
-    .dice-group { display: flex; gap: 4px; padding: 6px 10px; background: rgba(0,0,0,0.4); border: 1px solid #d4af37; border-radius: 10px; cursor: pointer; }
+    .dice-group:hover { transform: translateY(-4px) scale(1.06); background: rgba(212,175,55,0.25); }
+
+    @keyframes slideInGroup {
+      from { transform: translateX(-30px) scale(0.8); opacity: 0; }
+      to { transform: translateX(0) scale(1); opacity: 1; }
+    }
+
+    /* 2D 정적 주사위 (카지노 타일 내 배치용) */
+    .dice-face-2d {
+      width: 32px; height: 32px; border-radius: 6px; position: relative;
+      box-shadow: inset 0 0 5px rgba(0,0,0,0.4), 0 3px 6px rgba(0,0,0,0.5);
+      display: inline-block; border: 1px solid rgba(255,255,255,0.2);
+    }
 
     .color-select-panel { background: rgba(15, 10, 7, 0.9); border: 2px solid #d4af37; border-radius: 12px; padding: 15px; margin-bottom: 12px; text-align: center; }
     .color-picker { display: flex; gap: 12px; justify-content: center; margin-top: 10px; }
@@ -206,7 +246,6 @@
     </div>
   </div>
 
-  <!-- 결과 정산 모달 (확인 버튼 추가) -->
   <div id="result-modal" class="modal hidden">
     <div class="modal-content">
       <h2 id="modal-title" style="color: #ffd700; margin-bottom: 15px;">라운드 결과</h2>
