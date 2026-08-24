@@ -26,7 +26,6 @@ function startGame() {
   if (currentRoomCode) socket.emit('startGame', { roomCode: currentRoomCode });
 }
 
-// 3D 큐브 각 눈에 따른 Euler 회전각 매핑
 const CUBE_ROTATIONS = {
   1: { x: 0,    y: 0 },
   6: { x: 0,    y: 180 },
@@ -36,16 +35,15 @@ const CUBE_ROTATIONS = {
   4: { x: 90,   y: 0 }
 };
 
-// 🎲 3D 주사위 굴림, 랜덤 눈 결정 및 정렬 연출 메인 로직
+// 🎲 주사위 굴리기 핸들러
 function handleRollDiceClick() {
   if (!currentRoomCode || isRollingAnimation) return;
-  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+  const myPlayer = gameState?.players.find(p => p.id === myPlayerId);
   if (!myPlayer || myPlayer.diceCount <= 0) return;
 
   isRollingAnimation = true;
   const rollBtn = document.getElementById('roll-btn');
   rollBtn.disabled = true;
-  rollBtn.style.opacity = '0.4';
 
   const diceArea = document.getElementById('rolled-dice-area');
   diceArea.innerHTML = '';
@@ -53,16 +51,14 @@ function handleRollDiceClick() {
   const count = myPlayer.diceCount;
   const cubes = [];
 
-  // 1단계: 3D 정육면체 큐브 생성 및 위에서 떨어뜨리는 물리 애니메이션
   for (let i = 0; i < count; i++) {
     const container = document.createElement('div');
     container.className = 'cube-container anim-physics-drop';
-    container.style.animationDelay = `${i * 0.08}s`; // 차례대로 톡 톡 떨어짐
+    container.style.animationDelay = `${i * 0.06}s`;
 
     const cube = document.createElement('div');
     cube.className = 'cube-3d';
 
-    // 1~6면 HTML 구성
     for (let face = 1; face <= 6; face++) {
       const faceEl = document.createElement('div');
       faceEl.className = `cube-face face-${face}`;
@@ -77,20 +73,19 @@ function handleRollDiceClick() {
     cubes.push(cube);
   }
 
-  // 2단계: 3D 회전 애니메이션 실행 (미친 듯이 회전)
+  // 3D 무작위 회전
   cubes.forEach((cube) => {
     const randomRotX = (Math.floor(Math.random() * 4) + 4) * 360;
     const randomRotY = (Math.floor(Math.random() * 4) + 4) * 360;
     cube.style.transform = `rotateX(${randomRotX}deg) rotateY(${randomRotY}deg)`;
   });
 
-  // 3단계: 0.8초 후 서버에 주사위 굴림 데이터 요청
+  // 서버에 굴림 요청
   setTimeout(() => {
     socket.emit('rollDice', { roomCode: currentRoomCode });
-  }, 800);
+  }, 400);
 }
 
-// 서버에서 전달받은 진짜 눈으로 3D 주사위를 딱 맞추고 스르륵 정렬시킴
 function animateCubesToFinalAndSort(results, player) {
   const diceArea = document.getElementById('rolled-dice-area');
   const cubes = diceArea.querySelectorAll('.cube-3d');
@@ -101,20 +96,16 @@ function animateCubesToFinalAndSort(results, player) {
     return;
   }
 
-  // 1. 서버 결과값에 맞춰 각 큐브 최종 회전각 정렬
   cubes.forEach((cube, idx) => {
-    const finalVal = results[idx];
+    const finalVal = results[idx] || 1;
     const rot = CUBE_ROTATIONS[finalVal];
-    // 회전수 추가로 부드럽게 멈춤
     const finalX = 1440 + rot.x;
     const finalY = 1440 + rot.y;
     cube.style.transform = `rotateX(${finalX}deg) rotateY(${finalY}deg)`;
   });
 
-  // 2. 1.2초 후 3D 주사위들이 오름차순(1~6)으로 그룹핑되어 스르륵 정렬
   setTimeout(() => {
     diceArea.innerHTML = '';
-
     const counts = {};
     results.forEach(v => counts[v] = (counts[v] || 0) + 1);
 
@@ -122,7 +113,7 @@ function animateCubesToFinalAndSort(results, player) {
       const val = parseInt(valStr);
       const group = document.createElement('div');
       group.className = 'dice-group';
-      group.title = `${val}번 카지노에 주사위 ${counts[val]}개 배치하기`;
+      group.title = `${val}번 카지노에 배치`;
       group.onclick = () => selectDiceToPlace(val);
 
       for (let i = 0; i < counts[val]; i++) {
@@ -152,13 +143,24 @@ function animateCubesToFinalAndSort(results, player) {
     });
 
     isRollingAnimation = false;
-  }, 1200);
+  }, 1000);
 }
 
 function selectDiceToPlace(diceValue) {
   if (currentRoomCode && !isRollingAnimation) {
     socket.emit('placeDice', { roomCode: currentRoomCode, diceValue });
   }
+}
+
+function triggerMoneyDealAnimation() {
+  const allBills = document.querySelectorAll('.real-bill');
+  allBills.forEach((bill, idx) => {
+    bill.classList.remove('anim-deal');
+    void bill.offsetWidth; // 리플로우 강제
+    setTimeout(() => {
+      bill.classList.add('anim-deal');
+    }, idx * 80);
+  });
 }
 
 function confirmResult() {
@@ -199,6 +201,7 @@ function create2DDiceHTML(val, colorHex, textColorHex) {
   return `<div class="dice-face-2d" style="background-color:${colorHex}; color:${textColorHex};">${getDotsHTML(val)}</div>`;
 }
 
+// 소켓 이벤트 리스너
 socket.on('roomCreated', ({ roomCode, playerId }) => {
   currentRoomCode = roomCode;
   myPlayerId = playerId;
@@ -225,21 +228,9 @@ socket.on('closeModal', () => {
   btn.innerText = "확인 완료";
 });
 
-socket.on('updateConfirmCount', ({ count, total }) => {
-  const btn = document.getElementById('confirm-btn');
-  if (btn.disabled) {
-    btn.innerText = `대기 중... (${count}/${total})`;
-  }
-});
-
 socket.on('dealMoneyAnimation', () => {
-  const allBills = document.querySelectorAll('.real-bill');
-  allBills.forEach((bill, idx) => {
-    bill.classList.remove('anim-deal');
-    setTimeout(() => {
-      bill.classList.add('anim-deal');
-    }, idx * 120);
-  });
+  renderUI();
+  setTimeout(triggerMoneyDealAnimation, 50);
 });
 
 socket.on('gameStateUpdate', (state) => {
@@ -247,8 +238,7 @@ socket.on('gameStateUpdate', (state) => {
   gameState = state;
 
   const myPlayer = gameState.players.find(p => p.id === myPlayerId);
-  
-  // 굴림 신호가 도착했고 애니메이션 중이면 3D 큐브 정렬 애니메이션 trigger
+
   if (isRollingAnimation && myPlayer && myPlayer.currentRoll.length > 0 && oldRoll.length === 0) {
     animateCubesToFinalAndSort(myPlayer.currentRoll, myPlayer);
   } else {
@@ -351,7 +341,7 @@ function renderUI() {
     statusText.innerText = '원하는 색상을 뽑아 턴 순서를 정해 보세요!';
   } else if (gameState.state === 'PLAYING') {
     const turnPlayer = gameState.players[gameState.currentTurnIndex];
-    statusText.innerText = isMyTurn ? '🔥 당신의 턴입니다!' : `${turnPlayer.name}님 턴 진행 중...`;
+    statusText.innerText = isMyTurn ? '🔥 당신의 턴입니다!' : `${turnPlayer?.name || ''}님 턴 진행 중...`;
   }
 
   const playersContainer = document.getElementById('players-list');
@@ -415,18 +405,19 @@ function renderUI() {
   const diceArea = document.getElementById('rolled-dice-area');
   const myPlayer = gameState.players.find(p => p.id === myPlayerId);
 
-  if (gameState.state === 'PLAYING' && isMyTurn && myPlayer) {
+  if (gameState.state === 'PLAYING' && isMyTurn && myPlayer && myPlayer.diceCount > 0) {
     if (myPlayer.currentRoll.length === 0) {
       rollBtn.disabled = false;
       rollBtn.style.opacity = '1';
-      diceArea.innerHTML = '';
+      rollBtn.style.cursor = 'pointer';
     } else {
       rollBtn.disabled = true;
       rollBtn.style.opacity = '0.4';
+      rollBtn.style.cursor = 'not-allowed';
     }
   } else {
     rollBtn.disabled = true;
     rollBtn.style.opacity = '0.4';
-    diceArea.innerHTML = '';
+    rollBtn.style.cursor = 'not-allowed';
   }
 }
