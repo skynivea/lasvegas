@@ -423,6 +423,7 @@ function renderUI() {
     playersContainer.appendChild(card);
   });
 
+  // 🎲 카지노 타일 렌더링 (주사위 보임 문제 완전 해결)
   const casinosContainer = document.getElementById('casinos-container');
   casinosContainer.innerHTML = '';
 
@@ -433,12 +434,12 @@ function renderUI() {
 
     let billsHTML = casinoData.bills.map(b => `<div class="real-bill">$${b/1000}K</div>`).join('');
 
+    // 배치된 주사위 목록 생성 (모든 플레이어를 탐색하여 누락 방지)
     let diceHTML = '';
-    Object.keys(casinoData.dicePlaced).forEach(pId => {
-      const count = casinoData.dicePlaced[pId];
-      const player = gameState.players.find(p => p.id === pId);
-      if (player && count > 0) {
-        for (let i = 0; i < count; i++) {
+    gameState.players.forEach(player => {
+      const placedCount = casinoData.dicePlaced ? (casinoData.dicePlaced[player.id] || 0) : 0;
+      if (placedCount > 0) {
+        for (let i = 0; i < placedCount; i++) {
           diceHTML += create2DDiceHTML(c, player.color, player.textColor);
         }
       }
@@ -448,7 +449,9 @@ function renderUI() {
       <div class="casino-badge top-right">${c}</div>
       <div class="casino-badge bottom-left">${c}</div>
       <div class="bills-container">${billsHTML}</div>
-      <div class="placed-dice-area">${diceHTML}</div>
+      <div class="placed-dice-area" style="display:flex; flex-wrap:wrap; gap:3px; justify-content:center; align-items:center; margin-top:5px;">
+        ${diceHTML}
+      </div>
     `;
 
     casinosContainer.appendChild(tile);
