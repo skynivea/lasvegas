@@ -26,41 +26,133 @@ function startGame() {
   if (currentRoomCode) socket.emit('startGame', { roomCode: currentRoomCode });
 }
 
-// 주사위 굴리기 연출 실행 함수
+// 3D 큐브 각 눈에 따른 Euler 회전각 매핑
+const CUBE_ROTATIONS = {
+  1: { x: 0,    y: 0 },
+  6: { x: 0,    y: 180 },
+  2: { x: 0,    y: -90 },
+  5: { x: 0,    y: 90 },
+  3: { x: -90,  y: 0 },
+  4: { x: 90,   y: 0 }
+};
+
+// 🎲 3D 주사위 굴림, 랜덤 눈 결정 및 정렬 연출 메인 로직
 function handleRollDiceClick() {
   if (!currentRoomCode || isRollingAnimation) return;
-  
   const myPlayer = gameState.players.find(p => p.id === myPlayerId);
   if (!myPlayer || myPlayer.diceCount <= 0) return;
 
   isRollingAnimation = true;
+  const rollBtn = document.getElementById('roll-btn');
+  rollBtn.disabled = true;
+  rollBtn.style.opacity = '0.4';
+
   const diceArea = document.getElementById('rolled-dice-area');
   diceArea.innerHTML = '';
 
-  // 1단계: 남아있는 주사위 개수만큼 3D 회전 애니메이션 셋팅
-  for (let i = 0; i < myPlayer.diceCount; i++) {
-    const randomTempVal = Math.floor(Math.random() * 6) + 1;
-    const diceHTML = createDiceFaceHTML(randomTempVal, myPlayer.color, myPlayer.textColor, 'anim-drop anim-spin');
-    const wrapper = document.createElement('div');
-    wrapper.className = 'dice-3d-box';
-    wrapper.innerHTML = diceHTML;
-    diceArea.appendChild(wrapper);
+  const count = myPlayer.diceCount;
+  const cubes = [];
+
+  // 1단계: 3D 정육면체 큐브 생성 및 위에서 떨어뜨리는 물리 애니메이션
+  for (let i = 0; i < count; i++) {
+    const container = document.createElement('div');
+    container.className = 'cube-container anim-physics-drop';
+    container.style.animationDelay = `${i * 0.08}s`; // 차례대로 톡 톡 떨어짐
+
+    const cube = document.createElement('div');
+    cube.className = 'cube-3d';
+
+    // 1~6면 HTML 구성
+    for (let face = 1; face <= 6; face++) {
+      const faceEl = document.createElement('div');
+      faceEl.className = `cube-face face-${face}`;
+      faceEl.style.backgroundColor = myPlayer.color;
+      faceEl.style.color = myPlayer.textColor;
+      faceEl.innerHTML = getDotsHTML(face);
+      cube.appendChild(faceEl);
+    }
+
+    container.appendChild(cube);
+    diceArea.appendChild(container);
+    cubes.push(cube);
   }
 
-  // 회전음 스핀 동안 무작위로 눈 바꾸는 시각 효과
-  const spinInterval = setInterval(() => {
-    const diceElements = diceArea.querySelectorAll('.dice-face');
-    diceElements.forEach(el => {
-      const randVal = Math.floor(Math.random() * 6) + 1;
-      el.replaceWith(document.createElement('div'));
-    });
-  }, 100);
+  // 2단계: 3D 회전 애니메이션 실행 (미친 듯이 회전)
+  cubes.forEach((cube) => {
+    const randomRotX = (Math.floor(Math.random() * 4) + 4) * 360;
+    const randomRotY = (Math.floor(Math.random() * 4) + 4) * 360;
+    cube.style.transform = `rotateX(${randomRotX}deg) rotateY(${randomRotY}deg)`;
+  });
 
-  // 2단계: 0.8초 후 서버로 굴림 요청 보냄
+  // 3단계: 0.8초 후 서버에 주사위 굴림 데이터 요청
   setTimeout(() => {
-    clearInterval(spinInterval);
     socket.emit('rollDice', { roomCode: currentRoomCode });
   }, 800);
+}
+
+// 서버에서 전달받은 진짜 눈으로 3D 주사위를 딱 맞추고 스르륵 정렬시킴
+function animateCubesToFinalAndSort(results, player) {
+  const diceArea = document.getElementById('rolled-dice-area');
+  const cubes = diceArea.querySelectorAll('.cube-3d');
+
+  if (cubes.length === 0) {
+    isRollingAnimation = false;
+    renderUI();
+    return;
+  }
+
+  // 1. 서버 결과값에 맞춰 각 큐브 최종 회전각 정렬
+  cubes.forEach((cube, idx) => {
+    const finalVal = results[idx];
+    const rot = CUBE_ROTATIONS[finalVal];
+    // 회전수 추가로 부드럽게 멈춤
+    const finalX = 1440 + rot.x;
+    const finalY = 1440 + rot.y;
+    cube.style.transform = `rotateX(${finalX}deg) rotateY(${finalY}deg)`;
+  });
+
+  // 2. 1.2초 후 3D 주사위들이 오름차순(1~6)으로 그룹핑되어 스르륵 정렬
+  setTimeout(() => {
+    diceArea.innerHTML = '';
+
+    const counts = {};
+    results.forEach(v => counts[v] = (counts[v] || 0) + 1);
+
+    Object.keys(counts).sort((a,b) => parseInt(a) - parseInt(b)).forEach(valStr => {
+      const val = parseInt(valStr);
+      const group = document.createElement('div');
+      group.className = 'dice-group';
+      group.title = `${val}번 카지노에 주사위 ${counts[val]}개 배치하기`;
+      group.onclick = () => selectDiceToPlace(val);
+
+      for (let i = 0; i < counts[val]; i++) {
+        const miniCubeContainer = document.createElement('div');
+        miniCubeContainer.className = 'cube-container';
+        miniCubeContainer.style.transform = 'scale(0.85)';
+
+        const miniCube = document.createElement('div');
+        miniCube.className = 'cube-3d';
+
+        for (let face = 1; face <= 6; face++) {
+          const faceEl = document.createElement('div');
+          faceEl.className = `cube-face face-${face}`;
+          faceEl.style.backgroundColor = player.color;
+          faceEl.style.color = player.textColor;
+          faceEl.innerHTML = getDotsHTML(face);
+          miniCube.appendChild(faceEl);
+        }
+
+        const rot = CUBE_ROTATIONS[val];
+        miniCube.style.transform = `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`;
+        miniCubeContainer.appendChild(miniCube);
+        group.appendChild(miniCubeContainer);
+      }
+
+      diceArea.appendChild(group);
+    });
+
+    isRollingAnimation = false;
+  }, 1200);
 }
 
 function selectDiceToPlace(diceValue) {
@@ -69,10 +161,18 @@ function selectDiceToPlace(diceValue) {
   }
 }
 
+function confirmResult() {
+  if (currentRoomCode) {
+    socket.emit('confirmResult', { roomCode: currentRoomCode });
+    const btn = document.getElementById('confirm-btn');
+    btn.disabled = true;
+    btn.innerText = "다른 플레이어 대기 중...";
+  }
+}
+
 function nextRound() {
   if (currentRoomCode) {
     socket.emit('nextRound', { roomCode: currentRoomCode });
-    document.getElementById('result-modal').classList.add('hidden');
   }
 }
 
@@ -85,16 +185,18 @@ function sendChat() {
   }
 }
 
-function createDiceFaceHTML(val, colorHex, textColorHex, extraClass = '') {
-  let dots = '';
-  if (val === 1) dots = '<div class="dice-dot dot-center"></div>';
-  else if (val === 2) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-br"></div>';
-  else if (val === 3) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-center"></div><div class="dice-dot dot-br"></div>';
-  else if (val === 4) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-tr"></div><div class="dice-dot dot-bl"></div><div class="dice-dot dot-br"></div>';
-  else if (val === 5) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-tr"></div><div class="dice-dot dot-center"></div><div class="dice-dot dot-bl"></div><div class="dice-dot dot-br"></div>';
-  else if (val === 6) dots = '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-tr"></div><div class="dice-dot dot-ml"></div><div class="dice-dot dot-mr"></div><div class="dice-dot dot-bl"></div><div class="dice-dot dot-br"></div>';
+function getDotsHTML(val) {
+  if (val === 1) return '<div class="dice-dot dot-center"></div>';
+  if (val === 2) return '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-br"></div>';
+  if (val === 3) return '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-center"></div><div class="dice-dot dot-br"></div>';
+  if (val === 4) return '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-tr"></div><div class="dice-dot dot-bl"></div><div class="dice-dot dot-br"></div>';
+  if (val === 5) return '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-tr"></div><div class="dice-dot dot-center"></div><div class="dice-dot dot-bl"></div><div class="dice-dot dot-br"></div>';
+  if (val === 6) return '<div class="dice-dot dot-tl"></div><div class="dice-dot dot-tr"></div><div class="dice-dot dot-ml"></div><div class="dice-dot dot-mr"></div><div class="dice-dot dot-bl"></div><div class="dice-dot dot-br"></div>';
+  return '';
+}
 
-  return `<div class="dice-face ${extraClass}" style="background-color:${colorHex}; color:${textColorHex};">${dots}</div>`;
+function create2DDiceHTML(val, colorHex, textColorHex) {
+  return `<div class="dice-face-2d" style="background-color:${colorHex}; color:${textColorHex};">${getDotsHTML(val)}</div>`;
 }
 
 socket.on('roomCreated', ({ roomCode, playerId }) => {
@@ -116,32 +218,54 @@ socket.on('errorMsg', msg => {
   alert(msg);
 });
 
-socket.on('chatMessage', (data) => {
-  const chatContainer = document.getElementById('chat-messages');
-  const div = document.createElement('div');
-  if (data.system) {
-    div.className = 'chat-item chat-sys';
-    div.innerText = `[알림] ${data.text}`;
-  } else {
-    div.className = 'chat-item';
-    div.innerHTML = `<b style="color:${data.color}">${data.sender}:</b> ${data.text}`;
+socket.on('closeModal', () => {
+  document.getElementById('result-modal').classList.add('hidden');
+  const btn = document.getElementById('confirm-btn');
+  btn.disabled = false;
+  btn.innerText = "확인 완료";
+});
+
+socket.on('updateConfirmCount', ({ count, total }) => {
+  const btn = document.getElementById('confirm-btn');
+  if (btn.disabled) {
+    btn.innerText = `대기 중... (${count}/${total})`;
   }
-  chatContainer.appendChild(div);
-  chatContainer.scrollTop = chatContainer.scrollHeight;
+});
+
+socket.on('dealMoneyAnimation', () => {
+  const allBills = document.querySelectorAll('.real-bill');
+  allBills.forEach((bill, idx) => {
+    bill.classList.remove('anim-deal');
+    setTimeout(() => {
+      bill.classList.add('anim-deal');
+    }, idx * 120);
+  });
 });
 
 socket.on('gameStateUpdate', (state) => {
+  const oldRoll = gameState?.players.find(p => p.id === myPlayerId)?.currentRoll || [];
   gameState = state;
-  renderUI();
+
+  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+  
+  // 굴림 신호가 도착했고 애니메이션 중이면 3D 큐브 정렬 애니메이션 trigger
+  if (isRollingAnimation && myPlayer && myPlayer.currentRoll.length > 0 && oldRoll.length === 0) {
+    animateCubesToFinalAndSort(myPlayer.currentRoll, myPlayer);
+  } else {
+    renderUI();
+  }
 });
 
 socket.on('roundResolved', (data) => {
   const modal = document.getElementById('result-modal');
   const modalTitle = document.getElementById('modal-title');
   const modalBody = document.getElementById('modal-body');
+  const confirmBtn = document.getElementById('confirm-btn');
   const nextBtn = document.getElementById('next-round-btn');
 
   modal.classList.remove('hidden');
+  confirmBtn.disabled = false;
+  confirmBtn.innerText = "확인 완료";
 
   if (data.isGameOver) {
     modalTitle.innerText = "🏆 최종 승리 🏆";
@@ -152,6 +276,7 @@ socket.on('roundResolved', (data) => {
     });
     bodyHTML += `</ol>`;
     modalBody.innerHTML = bodyHTML;
+    confirmBtn.classList.add('hidden');
     nextBtn.classList.add('hidden');
   } else {
     modalTitle.innerText = `ROUND ${data.round} 정산`;
@@ -166,6 +291,7 @@ socket.on('roundResolved', (data) => {
       bodyHTML += `</div>`;
     }
     modalBody.innerHTML = bodyHTML;
+    confirmBtn.classList.remove('hidden');
 
     if (gameState && gameState.hostId === myPlayerId) nextBtn.classList.remove('hidden');
     else nextBtn.classList.add('hidden');
@@ -173,11 +299,10 @@ socket.on('roundResolved', (data) => {
 });
 
 function renderUI() {
-  if (!gameState) return;
+  if (!gameState || isRollingAnimation) return;
 
   document.getElementById('round-num').innerText = gameState.round;
 
-  // 1. 색상 선택 패널
   const colorPanel = document.getElementById('color-select-panel');
   const colorBtnsContainer = document.getElementById('color-buttons-container');
 
@@ -213,12 +338,10 @@ function renderUI() {
     colorPanel.classList.add('hidden');
   }
 
-  // 2. 방장 시작 버튼 노출
   const startBtn = document.getElementById('start-btn');
   if (gameState.state === 'WAITING' && gameState.hostId === myPlayerId) startBtn.classList.remove('hidden');
   else startBtn.classList.add('hidden');
 
-  // 3. 턴 상태 안내 텍스트
   const statusText = document.getElementById('status-text');
   const isMyTurn = gameState.currentTurnPlayerId === myPlayerId;
   
@@ -231,7 +354,6 @@ function renderUI() {
     statusText.innerText = isMyTurn ? '🔥 당신의 턴입니다!' : `${turnPlayer.name}님 턴 진행 중...`;
   }
 
-  // 4. 플레이어 프로필 바
   const playersContainer = document.getElementById('players-list');
   playersContainer.innerHTML = '';
   gameState.players.forEach((p, idx) => {
@@ -241,11 +363,8 @@ function renderUI() {
     card.className = `player-card ${isTurn ? 'active' : ''}`;
     card.style.borderTopColor = p.color;
 
-    if (gameState.state === 'PLAYING' && p.diceCount === 0) {
-      card.style.opacity = '0.4';
-    } else {
-      card.style.opacity = '1';
-    }
+    if (gameState.state === 'PLAYING' && p.diceCount === 0) card.style.opacity = '0.4';
+    else card.style.opacity = '1';
 
     card.innerHTML = `
       <div style="font-weight:900; font-size:13px; color:${p.color}">
@@ -261,7 +380,6 @@ function renderUI() {
     playersContainer.appendChild(card);
   });
 
-  // 5. 카지노 1~6 번 보드 타일 렌더링 (원작 다이아몬드 타일 형태)
   const casinosContainer = document.getElementById('casinos-container');
   casinosContainer.innerHTML = '';
 
@@ -278,7 +396,7 @@ function renderUI() {
       const player = gameState.players.find(p => p.id === pId);
       if (player && count > 0) {
         for (let i = 0; i < count; i++) {
-          diceHTML += createDiceFaceHTML(c, player.color, player.textColor);
+          diceHTML += create2DDiceHTML(c, player.color, player.textColor);
         }
       }
     });
@@ -293,7 +411,6 @@ function renderUI() {
     casinosContainer.appendChild(tile);
   }
 
-  // 6. 주사위 굴린 후 1~6 정렬 배치 영역
   const rollBtn = document.getElementById('roll-btn');
   const diceArea = document.getElementById('rolled-dice-area');
   const myPlayer = gameState.players.find(p => p.id === myPlayerId);
@@ -302,37 +419,14 @@ function renderUI() {
     if (myPlayer.currentRoll.length === 0) {
       rollBtn.disabled = false;
       rollBtn.style.opacity = '1';
-      if (!isRollingAnimation) diceArea.innerHTML = '';
+      diceArea.innerHTML = '';
     } else {
-      // 굴림 완료 후: 애니메이션 종료 후 오름차순(1~6) 정렬하여 표시
-      isRollingAnimation = false;
       rollBtn.disabled = true;
       rollBtn.style.opacity = '0.4';
-
-      diceArea.innerHTML = '';
-
-      // 눈별로 주사위 개수 그룹핑
-      const counts = {};
-      myPlayer.currentRoll.forEach(v => counts[v] = (counts[v] || 0) + 1);
-
-      // 1부터 6까지 순서대로 정렬하여 그룹 노출
-      Object.keys(counts).sort((a,b) => parseInt(a) - parseInt(b)).forEach(valStr => {
-        const val = parseInt(valStr);
-        const group = document.createElement('div');
-        group.className = 'dice-group';
-        group.title = `${val}번 카지노에 주사위 ${counts[val]}개 배치하기`;
-        group.onclick = () => selectDiceToPlace(val);
-
-        for (let i = 0; i < counts[val]; i++) {
-          group.innerHTML += createDiceFaceHTML(val, myPlayer.color, myPlayer.textColor, 'anim-drop');
-        }
-
-        diceArea.appendChild(group);
-      });
     }
   } else {
     rollBtn.disabled = true;
     rollBtn.style.opacity = '0.4';
-    if (!isRollingAnimation) diceArea.innerHTML = '';
+    diceArea.innerHTML = '';
   }
 }
