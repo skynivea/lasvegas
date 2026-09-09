@@ -5,6 +5,16 @@ let myPlayerId = null;
 let gameState = null;
 let isRollingAnimation = false;
 
+// 3D 주사위 면 회전 각도 정의
+const CUBE_ROTATIONS = {
+  1: { x: 0,   y: 0 },
+  6: { x: 0,   y: 180 },
+  2: { x: 0,   y: -90 },
+  5: { x: 0,   y: 90 },
+  3: { x: -90, y: 0 },
+  4: { x: 90,  y: 0 }
+};
+
 // 페이지 로드 시 엔터키 채팅 전송 이벤트 등록
 window.addEventListener('DOMContentLoaded', () => {
   const chatInput = document.getElementById('chat-input');
@@ -16,26 +26,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
-// 프론트엔드 주사위 HTML 생성을 위한 보조 함수
-function create2DDiceHTML(value, bgBgColor, textColor) {
-  return `
-    <div class="mini-dice" style="
-      width: 22px; 
-      height: 22px; 
-      background-color: ${bgBgColor}; 
-      color: ${textColor}; 
-      border-radius: 4px; 
-      display: inline-flex; 
-      justify-content: center; 
-      align-items: center; 
-      font-weight: bold; 
-      font-size: 12px; 
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-      border: 1px solid rgba(255,255,255,0.2);">
-      ${value}
-    </div>
-  `;
-}
+
 function createRoom() {
   const name = document.getElementById('player-name-input').value.trim();
   if (!name) return alert('닉네임을 입력하세요.');
@@ -91,15 +82,6 @@ function escapeHTML(str) {
     tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
   );
 }
-
-const CUBE_ROTATIONS = {
-  1: { x: 0,   y: 0 },
-  6: { x: 0,   y: 180 },
-  2: { x: 0,   y: -90 },
-  5: { x: 0,   y: 90 },
-  3: { x: -90, y: 0 },
-  4: { x: 90,  y: 0 }
-};
 
 // 🎲 주사위 굴리기 클릭
 function handleRollDiceClick() {
@@ -227,19 +209,38 @@ function selectDiceToPlace(diceValue) {
   socket.emit('placeDice', { roomCode: currentRoomCode, diceValue });
 }
 
+// 💵 중앙 대형 머니 덱 셔플 + 지폐 분배 연출
 function runMoneyDealingSequence() {
-  renderUI();
+  const moneyDeckOverlay = document.getElementById('money-deck-overlay');
+  const centerDeck = document.getElementById('center-deck');
 
-  const allBills = document.querySelectorAll('.real-bill');
-  allBills.forEach((bill, idx) => {
-    bill.style.opacity = '0';
-    bill.classList.remove('anim-fly-deal');
+  if (moneyDeckOverlay && centerDeck) {
+    // 1. 중앙 머니 덱 등장 & 셔플 애니메이션
+    moneyDeckOverlay.classList.remove('hidden');
+    centerDeck.classList.add('shuffle');
 
     setTimeout(() => {
-      bill.style.opacity = '1';
-      bill.classList.add('anim-fly-deal');
-    }, idx * 120);
-  });
+      // 2. 셔플 종료 후 오버레이 숨김
+      centerDeck.classList.remove('shuffle');
+      moneyDeckOverlay.classList.add('hidden');
+
+      // 3. 게임판 UI 업데이트 및 지폐 분배 애니메이션 실행
+      renderUI();
+
+      const allBills = document.querySelectorAll('.real-bill');
+      allBills.forEach((bill, idx) => {
+        bill.style.opacity = '0';
+        bill.classList.remove('anim-fly-deal');
+
+        setTimeout(() => {
+          bill.style.opacity = '1';
+          bill.classList.add('anim-fly-deal');
+        }, idx * 100);
+      });
+    }, 1200); // 1.2초 동안 셔플 연출 진행
+  } else {
+    renderUI();
+  }
 }
 
 function confirmResult() {
@@ -442,7 +443,7 @@ function renderUI() {
     playersContainer.appendChild(card);
   });
 
-  // 🎲 카지노 타일 렌더링 (주사위 보임 문제 완전 해결)
+  // 🎲 카지노 타일 렌더링 (금액별 지폐 클래스 적용)
   const casinosContainer = document.getElementById('casinos-container');
   casinosContainer.innerHTML = '';
 
@@ -451,9 +452,13 @@ function renderUI() {
     const tile = document.createElement('div');
     tile.className = 'casino-tile';
 
-    let billsHTML = casinoData.bills.map(b => `<div class="real-bill">$${b/1000}K</div>`).join('');
+    // 금액에 맞는 클래스(bill-10000 ~ bill-90000)를 동적으로 매핑
+    let billsHTML = casinoData.bills.map(b => {
+      const billClass = `bill-${b}`;
+      return `<div class="real-bill ${billClass}">$${b/1000}K</div>`;
+    }).join('');
 
-    // 배치된 주사위 목록 생성 (모든 플레이어를 탐색하여 누락 방지)
+    // 배치된 주사위 목록 생성
     let diceHTML = '';
     gameState.players.forEach(player => {
       const placedCount = casinoData.dicePlaced ? (casinoData.dicePlaced[player.id] || 0) : 0;
