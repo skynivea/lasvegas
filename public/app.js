@@ -16,7 +16,26 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
-
+// 프론트엔드 주사위 HTML 생성을 위한 보조 함수
+function create2DDiceHTML(value, bgBgColor, textColor) {
+  return `
+    <div class="mini-dice" style="
+      width: 22px; 
+      height: 22px; 
+      background-color: ${bgBgColor}; 
+      color: ${textColor}; 
+      border-radius: 4px; 
+      display: inline-flex; 
+      justify-content: center; 
+      align-items: center; 
+      font-weight: bold; 
+      font-size: 12px; 
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.2);">
+      ${value}
+    </div>
+  `;
+}
 function createRoom() {
   const name = document.getElementById('player-name-input').value.trim();
   if (!name) return alert('닉네임을 입력하세요.');
