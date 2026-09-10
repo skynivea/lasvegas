@@ -31,10 +31,7 @@
     .player-card { background: linear-gradient(145deg, #1f1610, #120d09); padding: 12px; border-radius: 12px; border: 1px solid #38271b; border-top: 5px solid #888; display: flex; flex-direction: column; transition: all 0.3s; }
     .player-card.active { box-shadow: 0 0 15px rgba(212,175,55,0.8); border-color: #d4af37 !important; transform: scale(1.02); }
 
-    /* 💵 상단 우측 머니 덱 컨테이너 */
-    .money-deck-container { position: absolute; top: 18px; right: 280px; z-index: 50; display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.6); padding: 6px 14px; border-radius: 12px; border: 1px solid #d4af37; }
-    .money-deck { width: 55px; height: 30px; position: relative; }
-    .deck-card { position: absolute; width: 100%; height: 100%; background: linear-gradient(135deg, #1b4332, #081c15); border: 1px solid #74c69d; border-radius: 4px; box-shadow: -2px 2px 4px rgba(0,0,0,0.5); }
+
 
     /* 💵 중앙 연출용 대형 머니 덱 오버레이 */
     #money-deck-overlay {
@@ -213,16 +210,7 @@
           <span style="font-size: 12px; color: #bbb;" id="status-text">게임 대기 중...</span>
         </div>
         
-        <!-- 💵 지폐 더미 표시 -->
-        <div class="money-deck-container">
-          <div class="money-deck">
-            <div class="deck-card" style="top:0; left:0;"></div>
-            <div class="deck-card" style="top:-3px; left:3px;"></div>
-            <div class="deck-card" style="top:-6px; left:6px;"></div>
-          </div>
-          <span style="font-size: 12px; color:#d8f3dc; font-weight:900;">💵 Money Deck</span>
-        </div>
-
+      
         <div>
           방 코드: <span class="room-tag" id="display-room-code">------</span>
           <button id="start-btn" class="btn hidden" style="width: auto; padding: 8px 18px; margin-left: 10px;" onclick="startGame()">게임 시작</button>
