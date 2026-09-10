@@ -8,9 +8,9 @@ const io = new Server(server, {
   transports: ['websocket', 'polling']
 });
 
-app.use(express.static('public')); // 클라이언트 정적 파일 경로 (필요시 수정)
+app.use(express.static('public')); // 클라이언트 정적 파일 경로
 
-// 사용 가능한 지폐 덱 (라스베가스 보드게임 기준 기본 덱 구성)
+// 사용 가능한 지폐 덱 (원 단위 기본 구성)
 const INITIAL_MONEY_DECK = [
   ...Array(6).fill(10000),
   ...Array(8).fill(20000),
@@ -44,7 +44,7 @@ function generateRoomCode() {
   return rooms[code] ? generateRoomCode() : code;
 }
 
-// 카지노 머니 세팅 ($50,000 이상이 되도록 채움)
+// 카지노 머니 세팅 (최소 50,000원 이상이 되도록 채움)
 function dealMoneyToCasinos(room) {
   room.casinos = {};
   for (let c = 1; c <= 6; c++) {
@@ -147,7 +147,7 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('gameStateUpdate', room);
   });
 
-  // 3. 게임 시작 (색상 선택 단계로)
+  // 3. 게임 시작 (색상 선택 단계로 이동)
   socket.on('startGame', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room || room.hostId !== socket.id) return;
@@ -180,10 +180,9 @@ io.on('connection', (socket) => {
     player.textColor = COLOR_HEX_MAP[colorKey].text;
     player.turnOrder = colorData.orderNum;
 
-    // 모든 인원이 색상을 골랐는지 확인
+    // 모든 플레이어가 색상을 뽑았는지 확인
     const allPicked = room.players.every(p => p.color !== null);
     if (allPicked) {
-      // 턴 순서대로 정렬
       room.players.sort((a, b) => a.turnOrder - b.turnOrder);
       room.state = 'PLAYING';
       room.round = 1;
@@ -195,7 +194,7 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('gameStateUpdate', room);
   });
 
-  // 5. 주사위 굴리기
+  // 5. 주사위 굴리기 (방 안의 전체 플레이어에게 굴림 애니메이션 알림)
   socket.on('rollDice', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room || room.state !== 'PLAYING') return;
@@ -204,7 +203,9 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.id === socket.id);
     if (!player || player.diceCount <= 0) return;
 
-    // 주사위 랜덤 생성
+    // 🎬 굴림 시작을 방 안의 모든 플레이어에게 전달 (관전)
+    io.to(roomCode).emit('playerRolling', { playerId: socket.id, diceCount: player.diceCount });
+
     player.currentRoll = [];
     for (let i = 0; i < player.diceCount; i++) {
       player.currentRoll.push(Math.floor(Math.random() * 6) + 1);
@@ -224,7 +225,7 @@ io.on('connection', (socket) => {
     const count = player.currentRoll.filter(v => v === diceValue).length;
     if (count === 0) return;
 
-    // 카지노에 배치
+    // 카지노에 해당 플레이어 주사위 추가
     if (!room.casinos[diceValue].dicePlaced[player.id]) {
       room.casinos[diceValue].dicePlaced[player.id] = 0;
     }
@@ -233,7 +234,7 @@ io.on('connection', (socket) => {
     player.diceCount -= count;
     player.currentRoll = [];
 
-    // 다음 주사위가 남아있는 플레이어의 턴으로 넘김
+    // 다음 주사위가 남아있는 플레이어 찾기
     let nextIdx = (room.currentTurnIndex + 1) % room.players.length;
     let loopCount = 0;
 
@@ -242,7 +243,7 @@ io.on('connection', (socket) => {
       loopCount++;
     }
 
-    // 모든 플레이어의 주사위가 0개인 경우 -> 라운드 종료 및 정산
+    // 모든 플레이어가 주사위를 전부 소진함 -> 라운드 정산
     if (loopCount >= room.players.length) {
       resolveRound(roomCode);
     } else {
@@ -266,7 +267,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 7. 정산 확인 완료 버튼 클릭 (모달 닫기)
+  // 7. 정산 확인 완료
   socket.on('confirmResult', ({ roomCode }) => {
     socket.emit('closeModal');
   });
@@ -284,7 +285,7 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('gameStateUpdate', room);
   });
 
-  // 9. ✨ 추가됨: 게임 재시작 (대기실/색상선택으로 복귀 및 데이터 초기화)
+  // 9. 게임 재시작 (방장 권한 - 방 유지 후 색상 선택으로 복귀)
   socket.on('restartGame', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room || room.hostId !== socket.id) return;
@@ -293,7 +294,6 @@ io.on('connection', (socket) => {
     room.round = 1;
     room.moneyDeck = shuffle([...INITIAL_MONEY_DECK]);
 
-    // 플레이어 머니, 주사위, 색상 선택 정보 초기화
     Object.keys(room.colorSelectionMap).forEach(key => {
       room.colorSelectionMap[key].selectedBy = null;
     });
@@ -311,7 +311,7 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('gameStateUpdate', room);
   });
 
-  // 퇴장 처리
+  // 연결 해제 처리
   socket.on('disconnect', () => {
     for (const code in rooms) {
       const room = rooms[code];
@@ -322,7 +322,7 @@ io.on('connection', (socket) => {
           delete rooms[code];
         } else {
           if (room.hostId === socket.id) {
-            room.hostId = room.players[0].id;
+            room.hostId = room.players[0].id; // 방장 위임
           }
           io.to(code).emit('gameStateUpdate', room);
         }
@@ -332,7 +332,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// 라운드 정산 로직
+// 라운드 정산 처리 로직
 function resolveRound(roomCode) {
   const room = rooms[roomCode];
   if (!room) return;
@@ -343,7 +343,7 @@ function resolveRound(roomCode) {
     const casino = room.casinos[c];
     roundResults[c] = [];
 
-    // 동점자 제거 (동점 시 상금 무효)
+    // 동일 개수 주사위(동점자) 무효화 처리
     const counts = {};
     Object.entries(casino.dicePlaced).forEach(([pId, count]) => {
       if (count > 0) {
@@ -352,7 +352,6 @@ function resolveRound(roomCode) {
       }
     });
 
-    // 주사위 수가 많은 순서대로 획득자 선정 (단, 동일 주사위 개수인 플레이어가 2명 이상이면 해당 인원 모두 제외)
     const validRanks = [];
     Object.keys(counts).map(Number).sort((a, b) => b - a).forEach(cnt => {
       if (counts[cnt].length === 1) {
@@ -360,8 +359,8 @@ function resolveRound(roomCode) {
       }
     });
 
-    // 상금 분배 (가장 큰 지폐부터 순서대로)
-    const bills = [...casino.bills]; // 이미 내림차순 정렬됨
+    // 지폐 상금 배분 (큰 지폐부터 순서대로)
+    const bills = [...casino.bills];
     validRanks.forEach(pId => {
       if (bills.length > 0) {
         const wonBill = bills.shift();
