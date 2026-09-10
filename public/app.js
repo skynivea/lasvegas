@@ -72,7 +72,7 @@ function escapeHTML(str) {
   return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
 }
 
-// 🎲 주사위 굴리기 클릭 시 서버에 이벤트 요청
+// 🎲 주사위 굴리기 클릭 요청
 function handleRollDiceClick() {
   if (!currentRoomCode || isRollingAnimation) return;
 
@@ -82,7 +82,7 @@ function handleRollDiceClick() {
   socket.emit('rollDice', { roomCode: currentRoomCode });
 }
 
-// 🎬 모든 플레이어에게 굴림 애니메이션 재생 (공유)
+// 🎬 1. 주사위 굴림 시작 (모든 플레이어 화면 중앙에서 실시간 3D 애니메이션 동기화)
 socket.on('playerRolling', ({ playerId, diceCount }) => {
   isRollingAnimation = true;
   const rollBtn = document.getElementById('roll-btn');
@@ -126,7 +126,7 @@ socket.on('playerRolling', ({ playerId, diceCount }) => {
   });
 });
 
-// 🎲 최종 결과에 맞춰 주사위 정렬 애니메이션
+// 🎬 2. 주사위 멈춤 및 그룹화 정렬 (전원 관전 가능 / 턴 주인만 클릭 가능)
 function animateCubesToFinalAndSort(results, player) {
   const diceArea = document.getElementById('rolled-dice-area');
   const cubes = diceArea ? diceArea.querySelectorAll('.cube-3d') : [];
@@ -147,51 +147,54 @@ function animateCubesToFinalAndSort(results, player) {
     if (!diceArea) return;
     diceArea.innerHTML = '';
 
-    // 본인 턴인 경우에만 클릭 가능한 선택 그룹 렌더링
-    if (player.id === myPlayerId) {
-      const counts = {};
-      results.forEach(v => counts[v] = (counts[v] || 0) + 1);
+    const counts = {};
+    results.forEach(v => counts[v] = (counts[v] || 0) + 1);
 
-      Object.keys(counts).sort((a,b) => parseInt(a) - parseInt(b)).forEach(valStr => {
-        const val = parseInt(valStr);
-        const group = document.createElement('div');
-        group.className = 'dice-group';
-        group.title = `${val}번 카지노에 배치`;
+    const isMyTurn = (player.id === myPlayerId);
+
+    Object.keys(counts).sort((a,b) => parseInt(a) - parseInt(b)).forEach(valStr => {
+      const val = parseInt(valStr);
+      const group = document.createElement('div');
+      group.className = 'dice-group';
+      group.style.cursor = isMyTurn ? 'pointer' : 'default';
+
+      if (isMyTurn) {
+        group.title = `${val}번 카지노에 배치하기`;
         group.onclick = () => selectDiceToPlace(val);
+      } else {
+        group.title = `${player.name}님이 선택 중...`;
+      }
 
-        for (let i = 0; i < counts[val]; i++) {
-          const miniCubeContainer = document.createElement('div');
-          miniCubeContainer.className = 'cube-container';
-          miniCubeContainer.style.transform = 'scale(0.85)';
+      for (let i = 0; i < counts[val]; i++) {
+        const miniCubeContainer = document.createElement('div');
+        miniCubeContainer.className = 'cube-container';
+        miniCubeContainer.style.transform = 'scale(0.9)';
 
-          const miniCube = document.createElement('div');
-          miniCube.className = 'cube-3d';
+        const miniCube = document.createElement('div');
+        miniCube.className = 'cube-3d';
 
-          for (let face = 1; face <= 6; face++) {
-            const faceEl = document.createElement('div');
-            faceEl.className = `cube-face face-${face}`;
-            faceEl.style.backgroundColor = player.color;
-            faceEl.style.color = player.textColor;
-            faceEl.innerHTML = getDotsHTML(face);
-            miniCube.appendChild(faceEl);
-          }
-
-          const rot = CUBE_ROTATIONS[val];
-          miniCube.style.transform = `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`;
-          miniCubeContainer.appendChild(miniCube);
-          group.appendChild(miniCubeContainer);
+        for (let face = 1; face <= 6; face++) {
+          const faceEl = document.createElement('div');
+          faceEl.className = `cube-face face-${face}`;
+          faceEl.style.backgroundColor = player.color;
+          faceEl.style.color = player.textColor;
+          faceEl.innerHTML = getDotsHTML(face);
+          miniCube.appendChild(faceEl);
         }
-        diceArea.appendChild(group);
-      });
-    } else {
-      diceArea.innerHTML = `<span style="font-size: 13px; color: ${player.color}; font-weight: bold;">${player.name}님이 주사위를 확인 중입니다...</span>`;
-    }
+
+        const rot = CUBE_ROTATIONS[val];
+        miniCube.style.transform = `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`;
+        miniCubeContainer.appendChild(miniCube);
+        group.appendChild(miniCubeContainer);
+      }
+      diceArea.appendChild(group);
+    });
 
     isRollingAnimation = false;
   }, 900);
 }
 
-// ⚡ 주사위 배치 (낙관적 UI 반영으로 딜레이 제거)
+// 🎬 3. 선택한 주사위 배치하기
 function selectDiceToPlace(diceValue) {
   if (!currentRoomCode || isRollingAnimation) return;
 
@@ -200,43 +203,31 @@ function selectDiceToPlace(diceValue) {
 
   isRollingAnimation = true;
 
-  // 1. 내 화면 즉시 배치 처리 (낙관적 UI 업데이트)
-  const count = myPlayer.currentRoll.filter(v => v === diceValue).length;
-  if (!gameState.casinos[diceValue].dicePlaced[myPlayerId]) {
-    gameState.casinos[diceValue].dicePlaced[myPlayerId] = 0;
-  }
-  gameState.casinos[diceValue].dicePlaced[myPlayerId] += count;
-  myPlayer.diceCount -= count;
-  myPlayer.currentRoll = [];
-
   const diceArea = document.getElementById('rolled-dice-area');
   if (diceArea) diceArea.innerHTML = '';
-  
-  // 2. 화면 즉시 재렌더링
-  renderUI();
 
-  // 3. 서버 전송
   socket.emit('placeDice', { roomCode: currentRoomCode, diceValue });
-  setTimeout(() => { isRollingAnimation = false; }, 100);
+  setTimeout(() => { isRollingAnimation = false; }, 200);
 }
 
-// 💵 머니덱 연출 및 완전 은폐 처리
+// 💵 머니덱 개연성 연출 (머니덱 등장 ➔ 돈 뿜어내기 ➔ 카지노 배치 ➔ 머니덱 퇴장)
 function runMoneyDealingSequence() {
   const moneyDeckOverlay = document.getElementById('money-deck-overlay');
   const centerDeck = document.getElementById('center-deck');
 
   if (moneyDeckOverlay && centerDeck) {
+    // 1. 머니덱 오버레이 켜기 및 셔플 연출
     moneyDeckOverlay.style.setProperty('display', 'flex', 'important');
     moneyDeckOverlay.classList.remove('hidden');
     centerDeck.classList.add('shuffle');
 
     setTimeout(() => {
       centerDeck.classList.remove('shuffle');
-      moneyDeckOverlay.classList.add('hidden');
-      moneyDeckOverlay.style.setProperty('display', 'none', 'important'); // 잔상 완벽 제거
-
+      
+      // 2. 머니덱에서 돈이 뿜어져 나오는 시점에 카지노 지폐 UI 렌더링
       renderUI();
 
+      // 3. 지폐가 날아가며 카지노에 꽂히는 연출 실행
       const allBills = document.querySelectorAll('.real-bill');
       allBills.forEach((bill, idx) => {
         bill.style.opacity = '0';
@@ -245,9 +236,16 @@ function runMoneyDealingSequence() {
         setTimeout(() => {
           bill.style.opacity = '1';
           bill.classList.add('anim-fly-deal');
-        }, idx * 100);
+        }, idx * 80);
       });
-    }, 1200);
+
+      // 4. 연출이 모두 완료되면 머니덱 오버레이 숨기기
+      setTimeout(() => {
+        moneyDeckOverlay.classList.add('hidden');
+        moneyDeckOverlay.style.setProperty('display', 'none', 'important');
+      }, 1000);
+
+    }, 800);
   } else {
     renderUI();
   }
@@ -280,7 +278,7 @@ function create2DDiceHTML(val, colorHex, textColorHex) {
   return `<div class="dice-face-2d" style="background-color:${colorHex}; color:${textColorHex};">${getDotsHTML(val)}</div>`;
 }
 
-// 소켓 리스너
+// Socket 리스너
 socket.on('roomCreated', ({ roomCode, playerId }) => {
   currentRoomCode = roomCode;
   myPlayerId = playerId;
@@ -315,12 +313,10 @@ socket.on('startMoneyDealingSequence', () => {
 });
 
 socket.on('gameStateUpdate', (state) => {
-  const turnPlayerBefore = gameState?.players?.find(p => p.id === gameState.currentTurnPlayerId);
   gameState = state;
-
   const currentTurnPlayer = gameState.players.find(p => p.id === gameState.currentTurnPlayerId);
 
-  // 누군가 주사위를 굴린 직후 상태 수신 시 정산 애니메이션 실행
+  // 주사위 결과값이 있고 애니메이션이 동작 중인 경우 정렬 애니메이션 실행
   if (currentTurnPlayer && currentTurnPlayer.currentRoll.length > 0 && isRollingAnimation) {
     animateCubesToFinalAndSort(currentTurnPlayer.currentRoll, currentTurnPlayer);
   } else {
@@ -452,12 +448,6 @@ function renderUI() {
     playersContainer.appendChild(card);
   });
 
-  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
-  const diceArea = document.getElementById('rolled-dice-area');
-  if (diceArea && myPlayer && myPlayer.currentRoll.length === 0 && !isRollingAnimation) {
-    diceArea.innerHTML = '';
-  }
-
   const casinosContainer = document.getElementById('casinos-container');
   casinosContainer.innerHTML = '';
 
@@ -494,6 +484,8 @@ function renderUI() {
   }
 
   const rollBtn = document.getElementById('roll-btn');
+  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+
   if (gameState.state === 'PLAYING' && isMyTurn && myPlayer && myPlayer.diceCount > 0 && myPlayer.currentRoll.length === 0) {
     rollBtn.disabled = false;
     rollBtn.style.opacity = '1';
