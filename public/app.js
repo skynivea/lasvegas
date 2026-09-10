@@ -5,7 +5,6 @@ let myPlayerId = null;
 let gameState = null;
 let isRollingAnimation = false;
 
-// 3D 주사위 면 회전 각도 정의
 const CUBE_ROTATIONS = {
   1: { x: 0,   y: 0 },
   6: { x: 0,   y: 180 },
@@ -72,17 +71,15 @@ function escapeHTML(str) {
   return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
 }
 
-// 🎲 주사위 굴리기 클릭 요청
 function handleRollDiceClick() {
   if (!currentRoomCode || isRollingAnimation) return;
 
   const myPlayer = gameState?.players.find(p => p.id === myPlayerId);
-  if (!myPlayer || myPlayer.diceCount <= 0) return;
+  if (!myPlayer || myPlayer.diceCount <= 0 || myPlayer.currentRoll.length > 0) return;
 
   socket.emit('rollDice', { roomCode: currentRoomCode });
 }
 
-// 🎬 1. 주사위 굴림 시작 (모든 플레이어 화면 중앙에서 실시간 3D 애니메이션 동기화)
 socket.on('playerRolling', ({ playerId, diceCount }) => {
   isRollingAnimation = true;
   const rollBtn = document.getElementById('roll-btn');
@@ -126,13 +123,13 @@ socket.on('playerRolling', ({ playerId, diceCount }) => {
   });
 });
 
-// 🎬 2. 주사위 멈춤 및 그룹화 정렬 (전원 관전 가능 / 턴 주인만 클릭 가능)
 function animateCubesToFinalAndSort(results, player) {
   const diceArea = document.getElementById('rolled-dice-area');
   const cubes = diceArea ? diceArea.querySelectorAll('.cube-3d') : [];
 
   if (cubes.length === 0) {
     isRollingAnimation = false;
+    renderGroupedDice(results, player);
     renderUI();
     return;
   }
@@ -144,90 +141,116 @@ function animateCubesToFinalAndSort(results, player) {
   });
 
   setTimeout(() => {
-    if (!diceArea) return;
-    diceArea.innerHTML = '';
-
-    const counts = {};
-    results.forEach(v => counts[v] = (counts[v] || 0) + 1);
-
-    const isMyTurn = (player.id === myPlayerId);
-
-    Object.keys(counts).sort((a,b) => parseInt(a) - parseInt(b)).forEach(valStr => {
-      const val = parseInt(valStr);
-      const group = document.createElement('div');
-      group.className = 'dice-group';
-      group.style.cursor = isMyTurn ? 'pointer' : 'default';
-
-      if (isMyTurn) {
-        group.title = `${val}번 카지노에 배치하기`;
-        group.onclick = () => selectDiceToPlace(val);
-      } else {
-        group.title = `${player.name}님이 선택 중...`;
-      }
-
-      for (let i = 0; i < counts[val]; i++) {
-        const miniCubeContainer = document.createElement('div');
-        miniCubeContainer.className = 'cube-container';
-        miniCubeContainer.style.transform = 'scale(0.9)';
-
-        const miniCube = document.createElement('div');
-        miniCube.className = 'cube-3d';
-
-        for (let face = 1; face <= 6; face++) {
-          const faceEl = document.createElement('div');
-          faceEl.className = `cube-face face-${face}`;
-          faceEl.style.backgroundColor = player.color;
-          faceEl.style.color = player.textColor;
-          faceEl.innerHTML = getDotsHTML(face);
-          miniCube.appendChild(faceEl);
-        }
-
-        const rot = CUBE_ROTATIONS[val];
-        miniCube.style.transform = `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`;
-        miniCubeContainer.appendChild(miniCube);
-        group.appendChild(miniCubeContainer);
-      }
-      diceArea.appendChild(group);
-    });
-
-    isRollingAnimation = false;
+    isRollingAnimation = false; // 🔓 주사위 애니메이션 종료 후 락 해제
+    renderGroupedDice(results, player);
+    renderUI();
   }, 900);
 }
 
-// 🎬 3. 선택한 주사위 배치하기
+function renderGroupedDice(results, player) {
+  const diceArea = document.getElementById('rolled-dice-area');
+  if (!diceArea) return;
+  diceArea.innerHTML = '';
+
+  const isMyTurn = (player.id === myPlayerId);
+
+  const labelEl = document.createElement('div');
+  labelEl.style.width = '100%';
+  labelEl.style.textAlign = 'center';
+  labelEl.style.fontWeight = 'bold';
+  labelEl.style.fontSize = '16px';
+  labelEl.style.marginBottom = '10px';
+  labelEl.style.color = isMyTurn ? '#FFD700' : '#FFFFFF';
+  labelEl.innerText = isMyTurn ? '🎯 나의 주사위' : `🎲 ${player.name}의 주사위`;
+  diceArea.appendChild(labelEl);
+
+  const counts = {};
+  results.forEach(v => counts[v] = (counts[v] || 0) + 1);
+
+  const container = document.createElement('div');
+  container.style.display = 'flex';
+  container.style.gap = '12px';
+  container.style.justifyContent = 'center';
+  container.style.alignItems = 'center';
+  container.style.flexWrap = 'wrap';
+
+  Object.keys(counts).sort((a,b) => parseInt(a) - parseInt(b)).forEach(valStr => {
+    const val = parseInt(valStr);
+    const group = document.createElement('div');
+    group.className = 'dice-group';
+    group.style.display = 'flex';
+    group.style.alignItems = 'center';
+    group.style.gap = '4px';
+    group.style.padding = '8px 12px';
+    group.style.borderRadius = '8px';
+
+    if (isMyTurn) {
+      group.style.border = '2px solid #FFD700';
+      group.style.backgroundColor = 'rgba(255, 215, 0, 0.15)';
+      group.style.boxShadow = '0 0 10px rgba(255, 215, 0, 0.4)';
+      group.style.cursor = 'pointer';
+      group.title = `${val}번 카지노에 배치하기`;
+      group.onclick = () => selectDiceToPlace(val);
+    } else {
+      group.style.border = '1px solid rgba(255,255,255,0.2)';
+      group.style.backgroundColor = 'rgba(0,0,0,0.3)';
+      group.style.cursor = 'default';
+      group.title = `${player.name}님이 선택 중...`;
+    }
+
+    for (let i = 0; i < counts[val]; i++) {
+      const miniCubeContainer = document.createElement('div');
+      miniCubeContainer.className = 'cube-container';
+      miniCubeContainer.style.transform = 'scale(0.85)';
+
+      const miniCube = document.createElement('div');
+      miniCube.className = 'cube-3d';
+
+      for (let face = 1; face <= 6; face++) {
+        const faceEl = document.createElement('div');
+        faceEl.className = `cube-face face-${face}`;
+        faceEl.style.backgroundColor = player.color;
+        faceEl.style.color = player.textColor;
+        faceEl.innerHTML = getDotsHTML(face);
+        miniCube.appendChild(faceEl);
+      }
+
+      const rot = CUBE_ROTATIONS[val];
+      miniCube.style.transform = `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`;
+      miniCubeContainer.appendChild(miniCube);
+      group.appendChild(miniCubeContainer);
+    }
+    container.appendChild(group);
+  });
+
+  diceArea.appendChild(container);
+}
+
 function selectDiceToPlace(diceValue) {
   if (!currentRoomCode || isRollingAnimation) return;
 
   const myPlayer = gameState?.players.find(p => p.id === myPlayerId);
   if (!myPlayer || myPlayer.currentRoll.length === 0) return;
 
-  isRollingAnimation = true;
-
   const diceArea = document.getElementById('rolled-dice-area');
   if (diceArea) diceArea.innerHTML = '';
 
   socket.emit('placeDice', { roomCode: currentRoomCode, diceValue });
-  setTimeout(() => { isRollingAnimation = false; }, 200);
 }
 
-// 💵 머니덱 개연성 연출 (머니덱 등장 ➔ 돈 뿜어내기 ➔ 카지노 배치 ➔ 머니덱 퇴장)
 function runMoneyDealingSequence() {
   const moneyDeckOverlay = document.getElementById('money-deck-overlay');
   const centerDeck = document.getElementById('center-deck');
 
   if (moneyDeckOverlay && centerDeck) {
-    // 1. 머니덱 오버레이 켜기 및 셔플 연출
     moneyDeckOverlay.style.setProperty('display', 'flex', 'important');
     moneyDeckOverlay.classList.remove('hidden');
     centerDeck.classList.add('shuffle');
 
     setTimeout(() => {
       centerDeck.classList.remove('shuffle');
-      
-      // 2. 머니덱에서 돈이 뿜어져 나오는 시점에 카지노 지폐 UI 렌더링
       renderUI();
 
-      // 3. 지폐가 날아가며 카지노에 꽂히는 연출 실행
       const allBills = document.querySelectorAll('.real-bill');
       allBills.forEach((bill, idx) => {
         bill.style.opacity = '0';
@@ -239,7 +262,6 @@ function runMoneyDealingSequence() {
         }, idx * 80);
       });
 
-      // 4. 연출이 모두 완료되면 머니덱 오버레이 숨기기
       setTimeout(() => {
         moneyDeckOverlay.classList.add('hidden');
         moneyDeckOverlay.style.setProperty('display', 'none', 'important');
@@ -278,7 +300,6 @@ function create2DDiceHTML(val, colorHex, textColorHex) {
   return `<div class="dice-face-2d" style="background-color:${colorHex}; color:${textColorHex};">${getDotsHTML(val)}</div>`;
 }
 
-// Socket 리스너
 socket.on('roomCreated', ({ roomCode, playerId }) => {
   currentRoomCode = roomCode;
   myPlayerId = playerId;
@@ -316,12 +337,19 @@ socket.on('gameStateUpdate', (state) => {
   gameState = state;
   const currentTurnPlayer = gameState.players.find(p => p.id === gameState.currentTurnPlayerId);
 
-  // 주사위 결과값이 있고 애니메이션이 동작 중인 경우 정렬 애니메이션 실행
-  if (currentTurnPlayer && currentTurnPlayer.currentRoll.length > 0 && isRollingAnimation) {
-    animateCubesToFinalAndSort(currentTurnPlayer.currentRoll, currentTurnPlayer);
+  if (currentTurnPlayer && currentTurnPlayer.currentRoll.length > 0) {
+    if (isRollingAnimation) {
+      animateCubesToFinalAndSort(currentTurnPlayer.currentRoll, currentTurnPlayer);
+    } else {
+      renderGroupedDice(currentTurnPlayer.currentRoll, currentTurnPlayer);
+    }
   } else {
-    renderUI();
+    if (!isRollingAnimation) {
+      const diceArea = document.getElementById('rolled-dice-area');
+      if (diceArea) diceArea.innerHTML = '';
+    }
   }
+  renderUI();
 });
 
 socket.on('roundResolved', (data) => {
@@ -486,6 +514,7 @@ function renderUI() {
   const rollBtn = document.getElementById('roll-btn');
   const myPlayer = gameState.players.find(p => p.id === myPlayerId);
 
+  // 버튼 활성화 조건: 턴이고, 남은 주사위가 있고, 아직 굴린 주사위가 정렬 안 되었거나 주사위를 배치한 직후일 때
   if (gameState.state === 'PLAYING' && isMyTurn && myPlayer && myPlayer.diceCount > 0 && myPlayer.currentRoll.length === 0) {
     rollBtn.disabled = false;
     rollBtn.style.opacity = '1';
