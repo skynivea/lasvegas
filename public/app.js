@@ -19,9 +19,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {
     chatInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        sendChat();
-      }
+      if (e.key === 'Enter') sendChat();
     });
   }
 });
@@ -64,40 +62,42 @@ socket.on('receiveChat', ({ senderName, color, message }) => {
   msgEl.style.marginBottom = '8px';
   msgEl.style.wordBreak = 'break-all';
   msgEl.style.lineHeight = '1.4';
-
-  msgEl.innerHTML = `
-    <span style="font-weight: bold; color: ${color};">[${senderName}]</span> 
-    <span style="color: #eee;">${escapeHTML(message)}</span>
-  `;
+  msgEl.innerHTML = `<span style="font-weight: bold; color: ${color};">[${senderName}]</span> <span style="color: #eee;">${escapeHTML(message)}</span>`;
 
   chatMessages.appendChild(msgEl);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 });
 
 function escapeHTML(str) {
-  return str.replace(/[&<>'"]/g, 
-    tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
-  );
+  return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
 }
 
-// 🎲 주사위 굴리기
+// 🎲 주사위 굴리기 클릭 시 서버에 이벤트 요청
 function handleRollDiceClick() {
   if (!currentRoomCode || isRollingAnimation) return;
 
   const myPlayer = gameState?.players.find(p => p.id === myPlayerId);
   if (!myPlayer || myPlayer.diceCount <= 0) return;
 
+  socket.emit('rollDice', { roomCode: currentRoomCode });
+}
+
+// 🎬 모든 플레이어에게 굴림 애니메이션 재생 (공유)
+socket.on('playerRolling', ({ playerId, diceCount }) => {
   isRollingAnimation = true;
   const rollBtn = document.getElementById('roll-btn');
-  rollBtn.disabled = true;
+  if (rollBtn) rollBtn.disabled = true;
 
   const diceArea = document.getElementById('rolled-dice-area');
+  if (!diceArea) return;
   diceArea.innerHTML = '';
 
-  const count = myPlayer.diceCount;
-  const cubes = [];
+  const player = gameState?.players.find(p => p.id === playerId);
+  const color = player ? player.color : '#ffd700';
+  const textColor = player ? player.textColor : '#000000';
 
-  for (let i = 0; i < count; i++) {
+  const cubes = [];
+  for (let i = 0; i < diceCount; i++) {
     const container = document.createElement('div');
     container.className = 'cube-container anim-physics-drop';
     container.style.animationDelay = `${i * 0.05}s`;
@@ -108,8 +108,8 @@ function handleRollDiceClick() {
     for (let face = 1; face <= 6; face++) {
       const faceEl = document.createElement('div');
       faceEl.className = `cube-face face-${face}`;
-      faceEl.style.backgroundColor = myPlayer.color;
-      faceEl.style.color = myPlayer.textColor;
+      faceEl.style.backgroundColor = color;
+      faceEl.style.color = textColor;
       faceEl.innerHTML = getDotsHTML(face);
       cube.appendChild(faceEl);
     }
@@ -124,15 +124,12 @@ function handleRollDiceClick() {
     const randomRotY = (Math.floor(Math.random() * 4) + 4) * 360;
     cube.style.transform = `rotateX(${randomRotX}deg) rotateY(${randomRotY}deg)`;
   });
+});
 
-  setTimeout(() => {
-    socket.emit('rollDice', { roomCode: currentRoomCode });
-  }, 350);
-}
-
+// 🎲 최종 결과에 맞춰 주사위 정렬 애니메이션
 function animateCubesToFinalAndSort(results, player) {
   const diceArea = document.getElementById('rolled-dice-area');
-  const cubes = diceArea.querySelectorAll('.cube-3d');
+  const cubes = diceArea ? diceArea.querySelectorAll('.cube-3d') : [];
 
   if (cubes.length === 0) {
     isRollingAnimation = false;
@@ -147,47 +144,54 @@ function animateCubesToFinalAndSort(results, player) {
   });
 
   setTimeout(() => {
+    if (!diceArea) return;
     diceArea.innerHTML = '';
-    const counts = {};
-    results.forEach(v => counts[v] = (counts[v] || 0) + 1);
 
-    Object.keys(counts).sort((a,b) => parseInt(a) - parseInt(b)).forEach(valStr => {
-      const val = parseInt(valStr);
-      const group = document.createElement('div');
-      group.className = 'dice-group';
-      group.title = `${val}번 카지노에 배치`;
-      group.onclick = () => selectDiceToPlace(val);
+    // 본인 턴인 경우에만 클릭 가능한 선택 그룹 렌더링
+    if (player.id === myPlayerId) {
+      const counts = {};
+      results.forEach(v => counts[v] = (counts[v] || 0) + 1);
 
-      for (let i = 0; i < counts[val]; i++) {
-        const miniCubeContainer = document.createElement('div');
-        miniCubeContainer.className = 'cube-container';
-        miniCubeContainer.style.transform = 'scale(0.85)';
+      Object.keys(counts).sort((a,b) => parseInt(a) - parseInt(b)).forEach(valStr => {
+        const val = parseInt(valStr);
+        const group = document.createElement('div');
+        group.className = 'dice-group';
+        group.title = `${val}번 카지노에 배치`;
+        group.onclick = () => selectDiceToPlace(val);
 
-        const miniCube = document.createElement('div');
-        miniCube.className = 'cube-3d';
+        for (let i = 0; i < counts[val]; i++) {
+          const miniCubeContainer = document.createElement('div');
+          miniCubeContainer.className = 'cube-container';
+          miniCubeContainer.style.transform = 'scale(0.85)';
 
-        for (let face = 1; face <= 6; face++) {
-          const faceEl = document.createElement('div');
-          faceEl.className = `cube-face face-${face}`;
-          faceEl.style.backgroundColor = player.color;
-          faceEl.style.color = player.textColor;
-          faceEl.innerHTML = getDotsHTML(face);
-          miniCube.appendChild(faceEl);
+          const miniCube = document.createElement('div');
+          miniCube.className = 'cube-3d';
+
+          for (let face = 1; face <= 6; face++) {
+            const faceEl = document.createElement('div');
+            faceEl.className = `cube-face face-${face}`;
+            faceEl.style.backgroundColor = player.color;
+            faceEl.style.color = player.textColor;
+            faceEl.innerHTML = getDotsHTML(face);
+            miniCube.appendChild(faceEl);
+          }
+
+          const rot = CUBE_ROTATIONS[val];
+          miniCube.style.transform = `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`;
+          miniCubeContainer.appendChild(miniCube);
+          group.appendChild(miniCubeContainer);
         }
-
-        const rot = CUBE_ROTATIONS[val];
-        miniCube.style.transform = `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`;
-        miniCubeContainer.appendChild(miniCube);
-        group.appendChild(miniCubeContainer);
-      }
-
-      diceArea.appendChild(group);
-    });
+        diceArea.appendChild(group);
+      });
+    } else {
+      diceArea.innerHTML = `<span style="font-size: 13px; color: ${player.color}; font-weight: bold;">${player.name}님이 주사위를 확인 중입니다...</span>`;
+    }
 
     isRollingAnimation = false;
   }, 900);
 }
 
+// ⚡ 주사위 배치 (낙관적 UI 반영으로 딜레이 제거)
 function selectDiceToPlace(diceValue) {
   if (!currentRoomCode || isRollingAnimation) return;
 
@@ -196,27 +200,40 @@ function selectDiceToPlace(diceValue) {
 
   isRollingAnimation = true;
 
-  const diceArea = document.getElementById('rolled-dice-area');
-  if (diceArea) {
-    diceArea.innerHTML = '<span style="font-size: 12px; color: #ffd700;">주사위 배치 중...</span>';
+  // 1. 내 화면 즉시 배치 처리 (낙관적 UI 업데이트)
+  const count = myPlayer.currentRoll.filter(v => v === diceValue).length;
+  if (!gameState.casinos[diceValue].dicePlaced[myPlayerId]) {
+    gameState.casinos[diceValue].dicePlaced[myPlayerId] = 0;
   }
+  gameState.casinos[diceValue].dicePlaced[myPlayerId] += count;
+  myPlayer.diceCount -= count;
+  myPlayer.currentRoll = [];
 
+  const diceArea = document.getElementById('rolled-dice-area');
+  if (diceArea) diceArea.innerHTML = '';
+  
+  // 2. 화면 즉시 재렌더링
+  renderUI();
+
+  // 3. 서버 전송
   socket.emit('placeDice', { roomCode: currentRoomCode, diceValue });
+  setTimeout(() => { isRollingAnimation = false; }, 100);
 }
 
+// 💵 머니덱 연출 및 완전 은폐 처리
 function runMoneyDealingSequence() {
   const moneyDeckOverlay = document.getElementById('money-deck-overlay');
   const centerDeck = document.getElementById('center-deck');
 
   if (moneyDeckOverlay && centerDeck) {
-    moneyDeckOverlay.style.display = 'flex';
+    moneyDeckOverlay.style.setProperty('display', 'flex', 'important');
     moneyDeckOverlay.classList.remove('hidden');
     centerDeck.classList.add('shuffle');
 
     setTimeout(() => {
       centerDeck.classList.remove('shuffle');
       moneyDeckOverlay.classList.add('hidden');
-      moneyDeckOverlay.style.display = 'none';
+      moneyDeckOverlay.style.setProperty('display', 'none', 'important'); // 잔상 완벽 제거
 
       renderUI();
 
@@ -246,9 +263,7 @@ function confirmResult() {
 }
 
 function nextRound() {
-  if (currentRoomCode) {
-    socket.emit('nextRound', { roomCode: currentRoomCode });
-  }
+  if (currentRoomCode) socket.emit('nextRound', { roomCode: currentRoomCode });
 }
 
 function getDotsHTML(val) {
@@ -292,28 +307,23 @@ socket.on('closeModal', () => {
   btn.innerText = "확인 완료";
 });
 
-// ✨ 새 라운드 시작 시 주사위 영역 초기화 처리 추가
 socket.on('startMoneyDealingSequence', () => {
   const diceArea = document.getElementById('rolled-dice-area');
-  if (diceArea) {
-    diceArea.innerHTML = '';
-  }
+  if (diceArea) diceArea.innerHTML = '';
   isRollingAnimation = false;
   runMoneyDealingSequence();
 });
 
 socket.on('gameStateUpdate', (state) => {
-  const oldRoll = gameState?.players.find(p => p.id === myPlayerId)?.currentRoll || [];
+  const turnPlayerBefore = gameState?.players?.find(p => p.id === gameState.currentTurnPlayerId);
   gameState = state;
 
-  const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+  const currentTurnPlayer = gameState.players.find(p => p.id === gameState.currentTurnPlayerId);
 
-  if (isRollingAnimation && myPlayer && myPlayer.currentRoll.length > 0 && oldRoll.length === 0) {
-    animateCubesToFinalAndSort(myPlayer.currentRoll, myPlayer);
+  // 누군가 주사위를 굴린 직후 상태 수신 시 정산 애니메이션 실행
+  if (currentTurnPlayer && currentTurnPlayer.currentRoll.length > 0 && isRollingAnimation) {
+    animateCubesToFinalAndSort(currentTurnPlayer.currentRoll, currentTurnPlayer);
   } else {
-    if (gameState.currentTurnPlayerId === myPlayerId && myPlayer && myPlayer.currentRoll.length === 0) {
-      isRollingAnimation = false;
-    }
     renderUI();
   }
 });
@@ -442,7 +452,6 @@ function renderUI() {
     playersContainer.appendChild(card);
   });
 
-  // ✨ 현재 보유한 굴린 주사위가 없다면 영역 초기화
   const myPlayer = gameState.players.find(p => p.id === myPlayerId);
   const diceArea = document.getElementById('rolled-dice-area');
   if (diceArea && myPlayer && myPlayer.currentRoll.length === 0 && !isRollingAnimation) {
@@ -485,7 +494,6 @@ function renderUI() {
   }
 
   const rollBtn = document.getElementById('roll-btn');
-
   if (gameState.state === 'PLAYING' && isMyTurn && myPlayer && myPlayer.diceCount > 0 && myPlayer.currentRoll.length === 0) {
     rollBtn.disabled = false;
     rollBtn.style.opacity = '1';
